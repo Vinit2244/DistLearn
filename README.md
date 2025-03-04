@@ -14,8 +14,8 @@
         <b>
             Team Members:
         </b>
-        <br> Abhinav Raundhal (2022101111)
-        <br> Archisha Panda (2022101070)
+        <br> Abhinav Raundhal (2022101089)
+        <br> Archisha Panda (2022111019)
         <br> Vinit Mehta (2022111001)
     </i>
     <br>
