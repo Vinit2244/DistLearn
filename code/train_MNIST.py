@@ -2,7 +2,7 @@ import torch
 import torch.nn as nn
 import torch.optim as optim
 import tqdm
-from models.MLP import MNISTMLP, MNISTDataLoader
+from models.Models import MNISTMLP, MNISTDataLoader
 
 # Define hyperparameters
 batch_size = 64

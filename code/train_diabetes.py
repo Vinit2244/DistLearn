@@ -2,7 +2,7 @@ import torch
 import torch.nn as nn
 import torch.optim as optim
 from torch.utils.data import DataLoader
-from models.MLP import DiabetesMLP, DiabetesDataset
+from models.Models import DiabetesMLP, DiabetesDataset
 
 # Define hyperparameters
 batch_size = 32
