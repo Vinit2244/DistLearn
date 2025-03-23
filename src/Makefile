@@ -15,15 +15,19 @@ compile: $(GENERATED_FILES)
 
 $(OUT_DIR)/%_pb2.py: $(PROTO_DIR)/%.proto
 	python3 -m grpc_tools.protoc --proto_path=$(PROTO_DIR) --python_out=$(OUT_DIR) --grpc_python_out=$(OUT_DIR) $<
+	pip3 install -r requirements.txt
 
+consul:
+	consul agent -dev
+	
 start_server:
-	python3 server/server.py --port=$(SERVER_PORT)
+	python3 server/fl_server.py --port=$(SERVER_PORT)
 
 start_clients:
 	@for i in $(shell seq 1 $(N_CLIENTS)); do \
 		port=$$(($(SERVER_PORT) + $$i)); \
 		echo "Starting client $$i on port $$port"; \
-		python3 client/client.py --server_ip localhost --server_port $(SERVER_PORT) --client_port $$port --client_id $$i; \
+		python3 client/client.py --port $$port --id $$i; \
 	done
 
 clean:

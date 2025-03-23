@@ -1,0 +1,36 @@
+syntax = "proto3";
+
+package file_transfer;
+
+service FLServer {
+    rpc TransferFile (stream FileChunk) returns (FileResponse) {}
+    rpc RegisterClient (ClientInfo) returns (ClientResponse) {}
+    rpc DeregisterClient (ClientInfo) returns (ClientResponse) {}
+}
+
+service Client {
+    rpc TransferFile (stream FileChunk) returns (FileResponse) {}
+}
+
+message FileChunk {
+    string filename = 1;
+    int32 id = 2;
+    bytes chunk = 3;
+    bool is_last_chunk = 4;
+}
+  
+message FileResponse {
+    int32 err_code = 1;
+    string msg = 2;
+}
+
+message ClientInfo {
+    int32 id = 1;
+    string ip = 2;
+    int32 port = 3;
+}
+
+message ClientResponse {
+    int32 err_code = 1;
+    string msg = 2;
+}
