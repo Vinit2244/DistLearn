@@ -30,11 +30,6 @@
 
 This repository contains our implementation for the *Distributed Systems* course project (Spring 2025). We've developed a **Federated Learning Model** that allows distributed training across multiple client nodes while preserving data privacy.
 
-
-Here’s a refined version for your `.md` file:  
-
----  
-
 ## `src` Directory  
 
 The `src` directory contains the base code for a **server-client file transfer system** with **dynamic server discovery** using `Consul`.  
@@ -46,3 +41,30 @@ The `src` directory contains the base code for a **server-client file transfer s
 
 ### Required Enhancements  
 - Implement an **automatic mode** for testing with multiple clients to streamline the process.  
+
+### How to Run?  
+1. Navigate into the `/src` folder.  
+2. Run:  
+   ```sh
+   make
+   ```  
+   This compiles all the files and installs the required dependencies.  
+3. Run:  
+   ```sh
+   make consul
+   ```  
+   This starts the **Consul server** for dynamic service discovery.  
+4. Run:  
+   ```sh
+   make start_server
+   ```  
+   This starts the **federated learning server**.  
+5. Run:  
+   ```sh
+   make start_clients
+   ```  
+   This is intended to start multiple clients automatically. **(Not yet implemented—use manual startup instead.)**  
+6. For now, manually start a client using:  
+   ```sh
+   python3 ./client/client.py --port 50052 --id 1
+   ```
