@@ -88,7 +88,7 @@ def train_model(model, train_loader, criterion, optimizer, device, epochs):
         avg_accuracy = total_accuracy / len(train_loader)
         print(f"Epoch {epoch+1}/{epochs}, Loss: {avg_loss:.4f}, Accuracy: {avg_accuracy:.2f}%")
 
-def main():
+def main(args_list):
     # Parse arguments
     parser = argparse.ArgumentParser(description='Diabetes MLP Training')
     parser.add_argument('--batch_size', type=int, default=32)
@@ -100,7 +100,10 @@ def main():
     parser.add_argument('--dataset_path', type=str, default="../data/diabetes_dataset.csv")
     parser.add_argument('--model_save_path', type=str, default="diabetes_mlp.pth")
     
-    args = parser.parse_args()
+    if args_list:
+        args = parser.parse_args(args_list)
+    else:
+        args = parser.parse_args()
 
     # Initialize dataset and loader
     dataset = DiabetesDataset(args.dataset_path)

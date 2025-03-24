@@ -55,7 +55,6 @@ def calculate_accuracy(outputs, labels):
     total = labels.size(0)
     return 100 * correct / total
 
-
 def get_optimizer(model, optimizer_name, learning_rate):
     """Return optimizer based on name"""
     if optimizer_name.lower() == 'adam':
@@ -87,7 +86,7 @@ def train_model(model, train_loader, criterion, optimizer, device, epochs):
         avg_accuracy = total_accuracy / len(train_loader)
         print(f"Epoch {epoch+1}/{epochs}, Loss: {avg_loss:.4f}, Accuracy: {avg_accuracy:.2f}%")
 
-def main():
+def main(args_list):
     parser = argparse.ArgumentParser(description='MNIST MLP Training')
     parser.add_argument('--batch_size', type=int, default=64)
     parser.add_argument('--learning_rate', type=float, default=0.001)
@@ -97,7 +96,10 @@ def main():
     parser.add_argument('--dataset_path', type=str, default='mnist_dataset.csv')
     parser.add_argument('--model_save_path', type=str, default='mnist_mlp.pth')
     
-    args = parser.parse_args()
+    if args_list:
+        args = parser.parse_args(args_list)
+    else:
+        args = parser.parse_args()
 
     # Initialize dataset and loader
     dataset = MNISTDataset(args.dataset_path)
