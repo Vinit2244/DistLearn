@@ -14,10 +14,6 @@ import file_transfer_pb2_grpc as file_transfer_grpc
 sys.path.append("utils")
 from utils import clear_screen, wait_for_enter, get_server_address, get_ip, STYLES, CHUNK_SIZE
 
-RED = '\033[0;31m'
-GREEN = '\033[0;32m'
-RESET = '\033[0m'
-
 # ============================= CLASSES ==============================
 class Client:
     def __init__(self, id, ip, port):
