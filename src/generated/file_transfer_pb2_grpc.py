@@ -49,6 +49,16 @@ class FLServerStub(object):
                 request_serializer=file__transfer__pb2.ClientInfo.SerializeToString,
                 response_deserializer=file__transfer__pb2.ClientResponse.FromString,
                 _registered_method=True)
+        self.InitializeFL = channel.unary_unary(
+                '/file_transfer.FLServer/InitializeFL',
+                request_serializer=file__transfer__pb2.FLConfig.SerializeToString,
+                response_deserializer=file__transfer__pb2.FLResponse.FromString,
+                _registered_method=True)
+        self.StartTraining = channel.unary_unary(
+                '/file_transfer.FLServer/StartTraining',
+                request_serializer=file__transfer__pb2.TrainingRequest.SerializeToString,
+                response_deserializer=file__transfer__pb2.TrainingResponse.FromString,
+                _registered_method=True)
 
 
 class FLServerServicer(object):
@@ -72,6 +82,18 @@ class FLServerServicer(object):
         context.set_details('Method not implemented!')
         raise NotImplementedError('Method not implemented!')
 
+    def InitializeFL(self, request, context):
+        """Missing associated documentation comment in .proto file."""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+    def StartTraining(self, request, context):
+        """Missing associated documentation comment in .proto file."""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
 
 def add_FLServerServicer_to_server(servicer, server):
     rpc_method_handlers = {
@@ -89,6 +111,16 @@ def add_FLServerServicer_to_server(servicer, server):
                     servicer.DeregisterClient,
                     request_deserializer=file__transfer__pb2.ClientInfo.FromString,
                     response_serializer=file__transfer__pb2.ClientResponse.SerializeToString,
+            ),
+            'InitializeFL': grpc.unary_unary_rpc_method_handler(
+                    servicer.InitializeFL,
+                    request_deserializer=file__transfer__pb2.FLConfig.FromString,
+                    response_serializer=file__transfer__pb2.FLResponse.SerializeToString,
+            ),
+            'StartTraining': grpc.unary_unary_rpc_method_handler(
+                    servicer.StartTraining,
+                    request_deserializer=file__transfer__pb2.TrainingRequest.FromString,
+                    response_serializer=file__transfer__pb2.TrainingResponse.SerializeToString,
             ),
     }
     generic_handler = grpc.method_handlers_generic_handler(
@@ -182,6 +214,60 @@ class FLServer(object):
             metadata,
             _registered_method=True)
 
+    @staticmethod
+    def InitializeFL(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/file_transfer.FLServer/InitializeFL',
+            file__transfer__pb2.FLConfig.SerializeToString,
+            file__transfer__pb2.FLResponse.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def StartTraining(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/file_transfer.FLServer/StartTraining',
+            file__transfer__pb2.TrainingRequest.SerializeToString,
+            file__transfer__pb2.TrainingResponse.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
 
 class ClientStub(object):
     """Missing associated documentation comment in .proto file."""
@@ -197,12 +283,23 @@ class ClientStub(object):
                 request_serializer=file__transfer__pb2.FileChunk.SerializeToString,
                 response_deserializer=file__transfer__pb2.FileResponse.FromString,
                 _registered_method=True)
+        self.StartTraining = channel.unary_unary(
+                '/file_transfer.Client/StartTraining',
+                request_serializer=file__transfer__pb2.TrainingRequest.SerializeToString,
+                response_deserializer=file__transfer__pb2.TrainingResponse.FromString,
+                _registered_method=True)
 
 
 class ClientServicer(object):
     """Missing associated documentation comment in .proto file."""
 
     def TransferFile(self, request_iterator, context):
+        """Missing associated documentation comment in .proto file."""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+    def StartTraining(self, request, context):
         """Missing associated documentation comment in .proto file."""
         context.set_code(grpc.StatusCode.UNIMPLEMENTED)
         context.set_details('Method not implemented!')
@@ -215,6 +312,11 @@ def add_ClientServicer_to_server(servicer, server):
                     servicer.TransferFile,
                     request_deserializer=file__transfer__pb2.FileChunk.FromString,
                     response_serializer=file__transfer__pb2.FileResponse.SerializeToString,
+            ),
+            'StartTraining': grpc.unary_unary_rpc_method_handler(
+                    servicer.StartTraining,
+                    request_deserializer=file__transfer__pb2.TrainingRequest.FromString,
+                    response_serializer=file__transfer__pb2.TrainingResponse.SerializeToString,
             ),
     }
     generic_handler = grpc.method_handlers_generic_handler(
@@ -244,6 +346,33 @@ class Client(object):
             '/file_transfer.Client/TransferFile',
             file__transfer__pb2.FileChunk.SerializeToString,
             file__transfer__pb2.FileResponse.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def StartTraining(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/file_transfer.Client/StartTraining',
+            file__transfer__pb2.TrainingRequest.SerializeToString,
+            file__transfer__pb2.TrainingResponse.FromString,
             options,
             channel_credentials,
             insecure,

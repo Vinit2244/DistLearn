@@ -2,15 +2,25 @@ import os
 import pandas as pd
 from sklearn.model_selection import train_test_split
 import numpy as np
+import shutil
 
-def create_folders_and_distribute_data(n, data_folder='data', clients_folder='clients', server_data_folder='server_data'):
+def create_folders_and_distribute_data(n, data_folder='data', clients_folder='clients', server_data_folder='server_data', client_script='src/client/client.py'):
     # Create clients and server_data folders
     os.makedirs(clients_folder, exist_ok=True)
     os.makedirs(server_data_folder, exist_ok=True)
+
+    # Verify client script exists
+    if not os.path.exists(client_script):
+        raise FileNotFoundError(f"Client script not found at {client_script}")
     
     # Create client folders
     for i in range(1, n + 1):
-        os.makedirs(os.path.join(clients_folder, str(i)), exist_ok=True)
+        client_dir = os.path.join(clients_folder, str(i))
+        os.makedirs(client_dir, exist_ok=True)
+        os.makedirs(os.path.join(client_dir,'logs'), exist_ok=True)
+
+        # Copy client.py to each client folder
+        shutil.copy(client_script, client_dir)
     
     # List of dataset files
     dataset_files = ['diabetes_dataset.csv', 'fashion_mnist_dataset.csv', 'mnist_dataset.csv']
@@ -30,7 +40,8 @@ def create_folders_and_distribute_data(n, data_folder='data', clients_folder='cl
         client_data_splits = np.array_split(train_data, n)
         
         for i, client_data in enumerate(client_data_splits, start=1):
-            client_data.to_csv(os.path.join(clients_folder, str(i), dataset_file), index=False)
+            client_dir = os.path.join(clients_folder, str(i))
+            client_data.to_csv(os.path.join(client_dir, dataset_file), index=False)
 
 # Example usage
 create_folders_and_distribute_data(n=5)

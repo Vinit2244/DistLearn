@@ -6,10 +6,14 @@ service FLServer {
     rpc TransferFile (stream FileChunk) returns (FileResponse) {}
     rpc RegisterClient (ClientInfo) returns (ClientResponse) {}
     rpc DeregisterClient (ClientInfo) returns (ClientResponse) {}
+
+    rpc InitializeFL (FLConfig) returns (FLResponse) {}
+    rpc StartTraining (TrainingRequest) returns (TrainingResponse) {}
 }
 
 service Client {
     rpc TransferFile (stream FileChunk) returns (FileResponse) {}
+    rpc StartTraining (TrainingRequest) returns (TrainingResponse) {}
 }
 
 message FileChunk {
@@ -33,4 +37,40 @@ message ClientInfo {
 message ClientResponse {
     int32 err_code = 1;
     string msg = 2;
+}
+
+// Message for Federated Learning configuration
+message FLConfig {
+    int32 num_epochs = 1;
+    float learning_rate = 2;
+    string optimizer = 3;
+    int32 batch_size = 4;
+    string model_type = 5;
+    float client_fraction = 6;
+}
+
+// Response for FL initialization
+message FLResponse {
+    int32 err_code = 1;
+    string msg = 2;
+}
+
+// Request for starting training on a client
+message TrainingRequest {
+    int32 round_id = 1;
+    string model_version = 2;
+    bytes model_weights = 3;
+    int32 local_epochs = 4;
+}
+
+// Response from client after training
+message TrainingResponse {
+    int32 err_code = 1;
+    string msg = 2;
+    int32 client_id = 3;
+    int32 round_id = 4;
+    bytes updated_weights = 5;
+    float training_loss = 6;
+    float accuracy = 7;
+    int32 samples_processed = 8;
 }

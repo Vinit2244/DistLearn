@@ -7,11 +7,13 @@ import sys
 import os
 from pathlib import Path
 
-sys.path.append(os.path.join(os.path.dirname(__file__), '..', 'generated'))
+# sys.path.append(os.path.join(os.path.dirname(__file__), '..', 'generated'))
+sys.path.append(os.path.join(os.path.dirname(__file__), '..', '..', 'src', 'generated'))
 import file_transfer_pb2
 import file_transfer_pb2_grpc as file_transfer_grpc
 
-sys.path.append("utils")
+# sys.path.append("utils")
+sys.path.append("../../src/utils")
 from utils import clear_screen, wait_for_enter, get_server_address, get_ip, STYLES, CHUNK_SIZE
 
 # ============================= CLASSES ==============================
@@ -105,7 +107,7 @@ class Client:
             print(f"{STYLES.FG_GREEN}Success: {response.msg}{STYLES.RESET}")
         else:
             logging.error(f"File transfer failed: {response.msg}")
-            print(f"{STYLES.BG_RED + STYLES.FG_WHITE}Error: {response.msg}{STYLES.RESET}")
+            print(f"{STYLES.BG_RED + STYLES.FG_WHITE}Error: {response.msg}{STYLES.RESET}")        
 
 
 class ClientServicer(file_transfer_grpc.ClientServicer):
@@ -220,7 +222,7 @@ if __name__ == "__main__":
 
     # Logging configuration
     logging.basicConfig(
-        filename=f"./client/logs/client_{my_id}.log",
+        filename=f"./logs/client_{my_id}.log",
         level=logging.INFO,
         format="%(asctime)s - %(levelname)s - %(message)s"
     )
