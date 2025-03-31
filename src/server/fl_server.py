@@ -50,12 +50,12 @@ class FLServer:
         }
 
         # Creating a consul service definition file
-        with open("./server/fl-server.json", "w") as json_file:
+        with open("./server/fl_server.json", "w") as json_file:
             json.dump(data, json_file)
         logging.info("FL service definition file created")
 
         # Registering the service with consul
-        command = ["consul", "services", "register", "./server/fl-server.json"]
+        command = ["consul", "services", "register", "./server/fl_server.json"]
         try:
             result = subprocess.run(command, check=True)
             logging.info("FL service registered with consul")
