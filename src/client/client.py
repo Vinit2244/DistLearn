@@ -8,6 +8,10 @@ import os
 from pathlib import Path
 import torch
 import json
+import warnings
+
+# Ignore all warnings
+warnings.filterwarnings("ignore")
 
 sys.path.append(os.path.join(os.path.dirname(__file__), '..', '..','src','generated'))
 import file_transfer_pb2

@@ -24,7 +24,7 @@ start_server:
 	python3 server/fl_server.py --port=$(SERVER_PORT)
 
 setup:
-	python3 ../setup.py --num_clients=3
+	python3 ../setup.py --num_clients=3 --visualize_initial --visualize_distributed
 
 start_clients:
 	@for i in $(shell seq 1 $(N_CLIENTS)); do \
@@ -38,3 +38,4 @@ clean:
 	rm -rf $(OUT_DIR)/*_pb2_grpc.py*
 	find . -name "__pycache__" -type d -exec rm -rf {} +
 	rm -rf ./server/logs/*.log 
+	rm 

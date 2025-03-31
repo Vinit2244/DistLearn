@@ -10,6 +10,10 @@ import json
 import subprocess
 import torch
 import random
+import warnings
+
+# Ignore all warnings
+warnings.filterwarnings("ignore")
 
 sys.path.append(os.path.join(os.path.dirname(__file__), '..', 'generated'))
 import file_transfer_pb2
@@ -49,12 +53,12 @@ class FLServer:
         }
 
         # Creating a consul service definition file
-        with open("./server/fl-server.json", "w") as json_file:
+        with open("./server/fl_server.json", "w") as json_file:
             json.dump(data, json_file)
         logging.info("FL service definition file created")
 
         # Registering the service with consul
-        command = ["consul", "services", "register", "./server/fl-server.json"]
+        command = ["consul", "services", "register", "./server/fl_server.json"]
         try:
             result = subprocess.run(command, check=True)
             logging.info("FL service registered with consul")
