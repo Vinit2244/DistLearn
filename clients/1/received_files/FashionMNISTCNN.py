@@ -6,6 +6,7 @@ import argparse
 import pandas as pd
 from tqdm import tqdm
 
+
 class FashionMNISTDataset(Dataset):
     def __init__(self, csv_file):
         df = pd.read_csv(csv_file)
@@ -28,6 +29,7 @@ class FashionMNISTDataset(Dataset):
     def __getitem__(self, idx):
         return self.images[idx], self.labels[idx]
 
+
 class FashionMNISTCNN(nn.Module):
     def __init__(self):
         super(FashionMNISTCNN, self).__init__()
@@ -46,6 +48,7 @@ class FashionMNISTCNN(nn.Module):
 
     def forward(self, x):
         return self.model(x)
+
 
 def calculate_accuracy(outputs, labels):
     _, predicted = torch.max(outputs, 1)
@@ -86,6 +89,36 @@ def train_model(model, train_loader, criterion, optimizer, device, epochs):
         avg_accuracy = total_accuracy / len(train_loader)
         print(f"Epoch {epoch+1}/{epochs}, Loss: {avg_loss:.4f}, Accuracy: {avg_accuracy:.2f}%")
 
+
+def evaluate_model(path_to_weights, dataset_path, batch_size=64):
+    dataset = FashionMNISTDataset(dataset_path)
+    data_loader = DataLoader(dataset, batch_size=batch_size, shuffle=False)
+
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    model = FashionMNISTCNN().to(device)
+
+    model.load_state_dict(torch.load(path_to_weights))
+    model.eval()
+
+    criterion = nn.CrossEntropyLoss()
+
+    total_loss = 0
+    total_accuracy = 0
+
+    with torch.no_grad():
+        for inputs, labels in data_loader:
+            inputs, labels = inputs.to(device), labels.to(device)
+            outputs = model(inputs)
+            loss = criterion(outputs, labels)
+            total_loss += loss.item()
+            total_accuracy += calculate_accuracy(outputs, labels)
+
+    avg_loss = total_loss / len(data_loader)
+    avg_accuracy = total_accuracy / len(data_loader)
+
+    return avg_loss, avg_accuracy
+
+
 def main(args_list):
     parser = argparse.ArgumentParser(description='FashionMNIST CNN Training')
     parser.add_argument('--batch_size', type=int, default=64)
@@ -117,6 +150,7 @@ def main(args_list):
     # Save only the model weights
     torch.save(model.state_dict(), args.model_save_path)
     print(f"Model weights saved to {args.model_save_path}")
+
 
 if __name__ == "__main__":
     main()

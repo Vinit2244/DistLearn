@@ -6,15 +6,16 @@ import grpc
 import sys
 import os
 from pathlib import Path
+import torch
+import json
 
-# sys.path.append(os.path.join(os.path.dirname(__file__), '..', 'generated'))
-sys.path.append(os.path.join(os.path.dirname(__file__), '..', '..', 'src', 'generated'))
+sys.path.append(os.path.join(os.path.dirname(__file__), '..', '..','src','generated'))
 import file_transfer_pb2
 import file_transfer_pb2_grpc as file_transfer_grpc
 
-# sys.path.append("utils")
 sys.path.append("../../src/utils")
 from utils import clear_screen, wait_for_enter, get_server_address, get_ip, STYLES, CHUNK_SIZE
+
 
 # ============================= CLASSES ==============================
 class Client:
@@ -107,7 +108,59 @@ class Client:
             print(f"{STYLES.FG_GREEN}Success: {response.msg}{STYLES.RESET}")
         else:
             logging.error(f"File transfer failed: {response.msg}")
-            print(f"{STYLES.BG_RED + STYLES.FG_WHITE}Error: {response.msg}{STYLES.RESET}")        
+            print(f"{STYLES.BG_RED + STYLES.FG_WHITE}Error: {response.msg}{STYLES.RESET}")
+
+    def initialise_fl(self, config_path, model_path):
+        sys.path.append("received_files")
+        """Initialize federated learning with the received config and model"""
+        try:
+            # Load the configuration
+            with open(config_path, 'r') as f:
+                config = json.load(f)
+            
+            logging.info(f"Loaded FL config: {config}")
+            
+            # Extract configuration parameters
+            model_type = config.get("model_type")
+            optimizer_type = config.get("optimizer")
+            learning_rate = config.get("learning_rate")
+            num_epochs = config.get("num_epochs")
+            batch_size = config.get("batch_size")
+            
+            # Initialize the model based on model_type
+            if model_type == "DiabetesMLP":
+                global DiabetesMLP, DiabetesDataset, train_diabetes_model, get_diabetes_optimizer
+                from DiabetesMLP import DiabetesMLP, DiabetesDataset, train_model as train_diabetes_model, get_optimizer as get_diabetes_optimizer
+                model = DiabetesMLP(input_size=16)
+            elif model_type == "FashionMNISTCNN":
+                global FashionMNISTCNN, FashionMNISTDataset, train_fashion_mnist_model, get_fashion_mnist_optimizer
+                from FashionMNISTCNN import FashionMNISTCNN, FashionMNISTDataset, train_model as train_fashion_mnist_model, get_optimizer as get_fashion_mnist_optimizer
+                model = FashionMNISTCNN()
+            elif model_type == "MNISTMLP":
+                global MNISTMLP, MNISTDataset, train_mnist_model, get_mnist_optimizer
+                from MNISTMLP import MNISTMLP, MNISTDataset, train_model as train_mnist_model, get_optimizer as get_mnist_optimizer
+                model = MNISTMLP()
+            else:
+                raise ValueError(f"Unsupported model type: {model_type}")
+            
+            # Load the model weights
+            model.load_state_dict(torch.load(model_path))
+            logging.info(f"Model weights loaded from {model_path}")
+            
+            logging.info("Federated learning initialized successfully")
+            print(f"{STYLES.FG_GREEN}Federated learning initialized successfully with model {model_type}{STYLES.RESET}")
+            print(f"{STYLES.FG_CYAN}Training config: {num_epochs} epochs, {optimizer_type} optimizer, LR={learning_rate}, batch size={batch_size}{STYLES.RESET}")
+            
+            # Here you could start training immediately or wait for a separate start command
+            # For now, we'll just save the initialized model for verification
+            save_path = Path(__file__).parent / 'models'
+            save_path.mkdir(exist_ok=True)
+            torch.save(model.state_dict(), save_path / f"round_0.pt")
+            logging.info(f"Initialized model saved to {save_path}/round_0.pt")
+            
+        except Exception as e:
+            logging.error(f"Error initializing federated learning: {str(e)}", exc_info=True)
+            print(f"{STYLES.BG_RED}Error initializing federated learning: {str(e)}{STYLES.RESET}")
 
 
 class ClientServicer(file_transfer_grpc.ClientServicer):
@@ -148,6 +201,8 @@ class ClientServicer(file_transfer_grpc.ClientServicer):
                         break
             
             logging.info(f"File transfer completed. Total chunks: {total_chunks}, Total bytes: {total_bytes}")
+                       
+            
             return file_transfer_pb2.FileResponse(
                 err_code=0,
                 msg=f"File {filename} received successfully"
@@ -159,6 +214,100 @@ class ClientServicer(file_transfer_grpc.ClientServicer):
                 err_code=1,
                 msg=f"Unexpected error: {str(e)}"
             )
+
+    def StartTraining(self, request, context):
+        try:
+            # Extract training parameters from request
+            round_id = request.round_id
+            model_weights = request.model_weights
+            local_epochs = request.local_epochs
+            
+            logging.info(f"Starting training for round {round_id}")
+
+            if round_id < 1:
+                client.initialise_fl('received_files/fl_config.json', 'received_files/initialized_model.pt')
+            
+            # Save received model weights to file
+            model_path = f"./models/round_{round_id}.pt"
+            with open(model_path, "wb") as f:
+                f.write(model_weights)
+
+            with open('received_files/fl_config.json', 'r') as f:
+                config = json.load(f)
+
+            # Extract configuration parameters
+            model_type = config.get("model_type")
+            optimizer_type = config.get("optimizer")
+            learning_rate = config.get("learning_rate")
+            # num_epochs = config.get("num_epochs")
+            batch_size = config.get("batch_size")
+
+            # Initialize the model based on model_type
+            if model_type == "DiabetesMLP":
+                model = DiabetesMLP(input_size=16)
+            elif model_type == "FashionMNISTCNN":
+                model = FashionMNISTCNN()
+            elif model_type == "MNISTMLP":
+                model = MNISTMLP()
+            else:
+                raise ValueError(f"Unsupported model type: {model_type}")
+            
+            # Load the model
+            model.load_state_dict(torch.load(model_path))
+            logging.info(f"Model weights loaded from {model_path}")
+
+            # Initialize the model based on model_type
+            if model_type == "DiabetesMLP":
+                criterion = torch.nn.BCELoss()
+                optimizer = get_diabetes_optimizer(model, optimizer_type, learning_rate)
+                dataset = DiabetesDataset("./data/diabetes_dataset.csv")
+            elif model_type == "FashionMNISTCNN":
+                criterion = torch.nn.CrossEntropyLoss()
+                optimizer = get_fashion_mnist_optimizer(model, optimizer_type, learning_rate)
+                dataset = FashionMNISTDataset("./data/fashion_mnist_dataset.csv")
+            elif model_type == "MNISTMLP":
+                criterion = torch.nn.CrossEntropyLoss()
+                optimizer = get_mnist_optimizer(model, optimizer_type, learning_rate)
+                dataset = MNISTDataset("./data/mnist_dataset.csv")
+            else:
+                raise ValueError(f"Unsupported model type: {model_type}")       
+           
+            train_loader = torch.utils.data.DataLoader(dataset, batch_size=batch_size, shuffle=True)   
+            device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+            # Train the model
+            if model_type == "DiabetesMLP":
+                train_diabetes_model(model, train_loader, criterion, optimizer, device, local_epochs)
+            elif model_type == "FashionMNISTCNN":
+                train_fashion_mnist_model(model, train_loader, criterion, optimizer, device, local_epochs)
+            elif model_type == "MNISTMLP":
+                train_mnist_model(model, train_loader, criterion, optimizer, device, local_epochs)
+            else:
+                raise ValueError(f"Unsupported model type: {model_type}")
+            
+            # Save the trained model weights
+            trained_model_path = f"./models/round_{round_id}_trained.pt"
+            torch.save(model.state_dict(), trained_model_path)
+
+            # Send the trained model weights back to the server
+            with open(trained_model_path, "rb") as f:
+                model_weights = f.read()
+
+            return file_transfer_pb2.TrainingResponse(
+                err_code=0,
+                msg=f"Training completed for round {round_id}",
+                client_id = my_id,
+                round_id = round_id,
+                updated_weights=model_weights,
+                samples_processed = len(dataset)
+            )    
+
+        except Exception as e:
+            logging.error(f"Error during training: {str(e)}", exc_info=True)
+            return file_transfer_pb2.TrainingResponse(
+                err_code=1,
+                msg=f"Error during training: {str(e)}"
+            )            
 
 
 # ============================= FUNCTIONS ============================
@@ -212,13 +361,16 @@ if __name__ == "__main__":
     args = parser.parse_args()
     mode = args.mode
 
-    global my_port, my_id, my_ip, client
+    global my_port, my_id, my_ip
     my_port = args.port
     my_id = args.id
     my_ip = get_ip()
 
     # Create a client object
+    global client
     client = Client(my_id, my_ip, my_port)
+
+    os.makedirs("./logs", exist_ok=True)
 
     # Logging configuration
     logging.basicConfig(
@@ -232,3 +384,5 @@ if __name__ == "__main__":
         menu()
     elif mode.lower() == 'a':   # Automatic mode
         ...
+        # client.start_my_server()
+        # client.register_with_server()

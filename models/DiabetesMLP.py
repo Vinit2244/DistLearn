@@ -6,6 +6,7 @@ import pandas as pd
 import torch.optim as optim
 import argparse
 
+
 # Custom dataset class
 class DiabetesDataset(Dataset):
     def __init__(self, file_path):
@@ -28,7 +29,8 @@ class DiabetesDataset(Dataset):
 
     def __getitem__(self, idx):
         return self.X[idx], self.y[idx]
-    
+
+
 # Define the MLP model
 class DiabetesMLP(nn.Module):
     def __init__(self, input_size):
@@ -49,12 +51,14 @@ class DiabetesMLP(nn.Module):
         x = self.sigmoid(x)
         return x
 
+
 def calculate_accuracy(outputs, labels):
     """Calculate accuracy for binary classification"""
     predictions = (outputs >= 0.5).float()
     correct = (predictions == labels).sum().item()
     total = labels.size(0)
     return 100 * correct / total
+
 
 def get_optimizer(model, optimizer_name, learning_rate):
     """Return optimizer based on name"""
@@ -64,6 +68,7 @@ def get_optimizer(model, optimizer_name, learning_rate):
         return optim.SGD(model.parameters(), lr=learning_rate)
     else:
         raise ValueError(f"Unknown optimizer: {optimizer_name}")
+
 
 def train_model(model, train_loader, criterion, optimizer, device, epochs):
     """Training loop using full dataset"""
@@ -87,6 +92,36 @@ def train_model(model, train_loader, criterion, optimizer, device, epochs):
         avg_loss = total_loss / len(train_loader)
         avg_accuracy = total_accuracy / len(train_loader)
         print(f"Epoch {epoch+1}/{epochs}, Loss: {avg_loss:.4f}, Accuracy: {avg_accuracy:.2f}%")
+
+
+def evaluate_model(path_to_weights, dataset_path, batch_size=64):
+    dataset = DiabetesDataset(dataset_path)
+    data_loader = DataLoader(dataset, batch_size=batch_size, shuffle=False)
+
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    model = DiabetesMLP(input_size=dataset.X.shape[1]).to(device)
+
+    model.load_state_dict(torch.load(path_to_weights))
+    model.eval()
+
+    criterion = nn.BCELoss()
+
+    total_loss = 0
+    total_accuracy = 0
+
+    with torch.no_grad():
+        for inputs, labels in data_loader:
+            inputs, labels = inputs.to(device), labels.to(device)
+            outputs = model(inputs)
+            loss = criterion(outputs, labels)
+            total_loss += loss.item()
+            total_accuracy += calculate_accuracy(outputs, labels)
+
+    avg_loss = total_loss / len(data_loader)
+    avg_accuracy = total_accuracy / len(data_loader)
+
+    return avg_loss, avg_accuracy
+
 
 def main(args_list):
     # Parse arguments
@@ -121,6 +156,7 @@ def main(args_list):
     # Save only the model weights
     torch.save(model.state_dict(), args.model_save_path)
     print(f"Model weights saved to {args.model_save_path}")
+
 
 if __name__ == "__main__":
     main()

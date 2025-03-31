@@ -3,8 +3,13 @@ import pandas as pd
 from sklearn.model_selection import train_test_split
 import numpy as np
 import shutil
+import argparse
+import warnings
 
-def create_folders_and_distribute_data(n, data_folder='data', clients_folder='clients', server_data_folder='server_data', client_script='src/client/client.py'):
+# Ignore all warnings
+warnings.filterwarnings("ignore")
+
+def create_folders_and_distribute_data(n, data_folder='../data', clients_folder='../clients', server_data_folder='../server_data', client_script="./client/client.py"):
     # Create clients and server_data folders
     os.makedirs(clients_folder, exist_ok=True)
     os.makedirs(server_data_folder, exist_ok=True)
@@ -17,7 +22,7 @@ def create_folders_and_distribute_data(n, data_folder='data', clients_folder='cl
     for i in range(1, n + 1):
         client_dir = os.path.join(clients_folder, str(i))
         os.makedirs(client_dir, exist_ok=True)
-        os.makedirs(os.path.join(client_dir,'logs'), exist_ok=True)
+        os.makedirs(os.path.join(client_dir, "data"), exist_ok=True)
 
         # Copy client.py to each client folder
         shutil.copy(client_script, client_dir)
@@ -40,8 +45,12 @@ def create_folders_and_distribute_data(n, data_folder='data', clients_folder='cl
         client_data_splits = np.array_split(train_data, n)
         
         for i, client_data in enumerate(client_data_splits, start=1):
-            client_dir = os.path.join(clients_folder, str(i))
-            client_data.to_csv(os.path.join(client_dir, dataset_file), index=False)
+            client_data_folder = os.path.join(clients_folder, str(i), "data")
+            client_data.to_csv(os.path.join(client_data_folder, dataset_file), index=False)
 
-# Example usage
-create_folders_and_distribute_data(n=5)
+if __name__ == "__main__":
+    argparser = argparse.ArgumentParser(description="Distribute data among clients and server")
+    argparser.add_argument("--num_clients", type=int, default=3, help="Number of client folders to create")
+
+    args = argparser.parse_args()
+    create_folders_and_distribute_data(n=args.num_clients)
