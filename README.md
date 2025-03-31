@@ -30,6 +30,44 @@
 
 This repository contains our implementation for the *Distributed Systems* course project (Spring 2025). We've developed a **Federated Learning Model** that allows distributed training across multiple client nodes while preserving data privacy.
 
+## `data` Directory
+```bash
+python3 setup_data.py
+```
+
+This code converts the FashionMNIST and MNIST datasets into CSV files by flattening each 28×28 image into a 1D array of 784 pixels, adding labels, and combining train/test sets. It saves the processed data for easier use in non-PyTorch environments.
+
+## `models` Directory
+
+This directory contains data loaders, training and evaluation code for the 3 models implemented in this project namely DiabetesMLP, FashionMNISTCNN and MNISTMLP.
+
+## `server_data` Directory
+
+This directory contains data for testing the global model after each round of federated training, once the server has aggregated weights from all clients.
+
+## `single_device_training` Directory
+```bash
+python3 train_all_models.py
+```
+
+Contains results of the models when trained with all the data on a single device. Also stores the trained models as pth files.
+
+## Setup For Federated Learning
+```bash
+python3 setup.py --num_clients 3
+```
+This script sets up the directory structure and distributes datasets for a Federated Learning setup. It does the following:
+- Creates Necessary Directories:
+   - A clients folder (../clients/) with subfolders for each client (e.g., ../clients/1/, ../clients/2/, etc.).
+   - A server data folder (../server_data/) for storing global test data.
+
+- Distributes the Data:
+   - Reads the three datasets and splits each dataset for training and testing in the ration (90:10).
+   - The training data is then equally divided among n clients.
+
+- Places client.py inside each client's directory.
+
+
 ## `src` Directory  
 
 The `src` directory contains the base code for a **server-client file transfer system** with **dynamic server discovery** using `Consul`.  
@@ -38,6 +76,8 @@ The `src` directory contains the base code for a **server-client file transfer s
 - Both the **client** and **server** are **menu-based**, requiring manual startup for each client.  
 - Clients assume that each file sent has a **unique filename** (i.e., it does not already exist on the server).  
 - To ensure uniqueness, clients append `_client_<client_id>` to the filename before sending.  
+- Before starting federated learning, the server needs to send training code to the clients (DiabetesMLP.py/FashionMNISTCNN.py/MNISTMLP.py). This can be done using the Transfer File function from the menu of the server.
+- After training is done by all clients, the final model is stroed by the server in the 'models' directory with the name `global_model_round_{last_round}.pth`.
 
 ### Required Enhancements  
 - Implement an **automatic mode** for testing with multiple clients to streamline the process.  
@@ -68,3 +108,16 @@ The `src` directory contains the base code for a **server-client file transfer s
    ```sh
    python3 ./client/client.py --port 50052 --id 1
    ```
+7. First register all clients with the server by choosing option 1 from the menu.
+
+8. Send the training code to all clients by choosing option 1 (Transfer File) and entering 'all' when asked for client ID.
+
+9. Then select option 3 (Initialize Federated Learning) to initialise federated learning by the server. Enter the command line inputs as follows:
+   - num_epochs : Number of local epochs after which client should send weights
+   - learning_rate : LR for local training
+   - optimizer : SGD/Adam to be used during training
+   - batch_size : Batch size to be used for DataLoader
+   - model_type : The model we want to train (MNISTMLP, FashionMNISTCNN, DiabetesMLP)
+   - client_fraction : Fraction of clients to involve in training in every round
+
+10. After initialisation is done, start federated training by choosing option 4 from the server menu. Enter the number of rounds of federated learning you want to perform.
