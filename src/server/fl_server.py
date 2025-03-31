@@ -10,10 +10,7 @@ import json
 import subprocess
 import torch
 import random
-import warnings
-
-# Ignore all warnings
-warnings.filterwarnings("ignore")
+import concurrent.futures
 
 sys.path.append(os.path.join(os.path.dirname(__file__), '..', 'generated'))
 import file_transfer_pb2
@@ -53,12 +50,12 @@ class FLServer:
         }
 
         # Creating a consul service definition file
-        with open("./server/fl_server.json", "w") as json_file:
+        with open("./server/fl-server.json", "w") as json_file:
             json.dump(data, json_file)
         logging.info("FL service definition file created")
 
         # Registering the service with consul
-        command = ["consul", "services", "register", "./server/fl_server.json"]
+        command = ["consul", "services", "register", "./server/fl-server.json"]
         try:
             result = subprocess.run(command, check=True)
             logging.info("FL service registered with consul")
@@ -176,16 +173,150 @@ class FLServer:
         
         return selected_clients
 
+    # def start_federated_training(self, num_rounds):
+    #     """Start the federated training process with proper weight aggregation"""
+    #     try:
+    #         # Load FL configuration
+    #         with open("./server/fl_config.json", "r") as f:
+    #             fl_config = json.load(f)
+            
+    #         model_type = fl_config["model_type"]
+    #         client_fraction = fl_config["client_fraction"]
+            
+    #         # Initialize the appropriate model
+    #         if model_type == "DiabetesMLP":
+    #             model = DiabetesMLP(input_size=16)
+    #         elif model_type == "FashionMNISTCNN":
+    #             model = FashionMNISTCNN()
+    #         elif model_type == "MNISTMLP":
+    #             model = MNISTMLP()
+    #         else:
+    #             print(f"{STYLES.BG_RED}Invalid model type in config{STYLES.RESET}")
+    #             return
+            
+    #         # Load initial weights
+    #         initial_weights_path = "./server/models/initialized_model.pt"
+    #         model.load_state_dict(torch.load(initial_weights_path))
+            
+    #         # Start training rounds
+    #         for round_id in range(num_rounds):
+    #             print(f"\n{STYLES.FG_CYAN}=== Starting Round {round_id + 1}/{num_rounds} ==={STYLES.RESET}")
+                
+    #             # Select clients for this round
+    #             num_clients = len(self.clients)
+    #             num_selected = max(1, int(client_fraction * num_clients))
+    #             selected_clients = random.sample(list(self.clients.keys()), num_selected)
+    #             print(f"Selected clients for this round: {selected_clients}")
+                
+    #             # Collect responses from all selected clients
+    #             client_responses = []
+    #             total_samples = 0
+                
+    #             for client_id in selected_clients:
+    #                 try:
+    #                     client_ip, client_port = self.clients[client_id]
+    #                     channel = grpc.insecure_channel(f"{client_ip}:{client_port}")
+    #                     stub = file_transfer_grpc.ClientStub(channel)
+                        
+    #                     # Send current global model to client
+    #                     with open(f"./server/models/global_model_round_{round_id}.pt" if round_id > 0 else initial_weights_path, "rb") as f:
+    #                         model_weights = f.read()
+                        
+    #                     response = stub.StartTraining(file_transfer_pb2.TrainingRequest(
+    #                         round_id=round_id,
+    #                         model_version="1.0",
+    #                         model_weights=model_weights,
+    #                         local_epochs=fl_config["num_epochs"]
+    #                     ))
+                        
+    #                     if response.err_code == 0:
+    #                         client_responses.append(response)
+    #                         total_samples += response.samples_processed
+    #                         print(f"Client {client_id} completed training successfully")
+    #                     else:
+    #                         print(f"{STYLES.BG_RED}Client {client_id} failed: {response.msg}{STYLES.RESET}")
+                        
+    #                     channel.close()
+                    
+    #                 except Exception as e:
+    #                     print(f"{STYLES.BG_RED}Error with client {client_id}: {str(e)}{STYLES.RESET}")
+                
+    #             if not client_responses:
+    #                 print(f"{STYLES.BG_RED}No successful client responses in round {round_id + 1}{STYLES.RESET}")
+    #                 break
+                
+    #             # Aggregate client updates (Federated Averaging)
+    #             avg_weights = {}
+    #             for response in client_responses:
+    #                 # Save client's model weights
+    #                 client_model_path = f"./server/models/client_{response.client_id}_round_{round_id}.pt"
+    #                 with open(client_model_path, "wb") as f:
+    #                     f.write(response.updated_weights)
+                    
+    #                 # Load weights into model
+    #                 client_model = model
+    #                 client_model.load_state_dict(torch.load(client_model_path))
+                    
+    #                 # Calculate weight for this client (proportional to samples)
+    #                 client_weight = response.samples_processed / total_samples
+                    
+    #                 # Add weighted contribution to average
+    #                 for name, param in client_model.state_dict().items():
+    #                     if name not in avg_weights:
+    #                         avg_weights[name] = param * client_weight
+    #                     else:
+    #                         avg_weights[name] += param * client_weight
+                
+    #             # Update global model with averaged weights
+    #             model.load_state_dict(avg_weights)
+                
+    #             # Save new global model
+    #             global_model_path = f"./server/models/global_model_round_{round_id + 1}.pt"
+    #             torch.save(model.state_dict(), global_model_path)
+
+    #             if model_type == "DiabetesMLP":
+    #                 path_to_server_test_data = "../server_data/diabetes_dataset.csv"
+                    
+    #                 # Calculate metrics
+    #                 loss, acc = evaluate_diabetes_model(global_model_path, path_to_server_test_data)
+    #                 print(f"Loss: {round(loss, 4)}")
+    #                 print(f"Accuracy: {round(acc, 4)}%")
+                
+    #             elif model_type == "FashionMNISTCNN":
+    #                 path_to_server_test_data = "../server_data/fashion_mnist_dataset.csv"
+                    
+    #                 # Calculate metrics
+    #                 loss, acc = evaluate_fashion_mnist_model(global_model_path, path_to_server_test_data)
+    #                 print(f"Loss: {round(loss, 4)}")
+    #                 print(f"Accuracy: {round(acc, 4)}%")
+
+    #             elif model_type == "MNISTMLP":
+    #                 path_to_server_test_data = "../server_data/mnist_dataset.csv"
+                    
+    #                 # Calculate metrics
+    #                 loss, acc = evaluate_mnist_model(global_model_path, path_to_server_test_data)
+    #                 print(f"Loss: {round(loss, 4)}")
+    #                 print(f"Accuracy: {round(acc, 4)}%")
+
+    #             print(f"{STYLES.FG_GREEN}Round {round_id + 1} completed{STYLES.RESET}")
+    #             print(f"  Total Samples: {total_samples}")
+            
+    #         print(f"\n{STYLES.FG_GREEN}Federated training completed after {num_rounds} rounds{STYLES.RESET}")
+            
+    #     except Exception as e:
+    #         print(f"{STYLES.BG_RED}Error during federated training: {str(e)}{STYLES.RESET}")
+    #         logging.error(f"Error during federated training: {str(e)}", exc_info=True)
+
     def start_federated_training(self, num_rounds):
-        """Start the federated training process with proper weight aggregation"""
+        """Start the federated training process with parallel client training"""
         try:
             # Load FL configuration
             with open("./server/fl_config.json", "r") as f:
                 fl_config = json.load(f)
-            
+
             model_type = fl_config["model_type"]
             client_fraction = fl_config["client_fraction"]
-            
+
             # Initialize the appropriate model
             if model_type == "DiabetesMLP":
                 model = DiabetesMLP(input_size=16)
@@ -196,58 +327,66 @@ class FLServer:
             else:
                 print(f"{STYLES.BG_RED}Invalid model type in config{STYLES.RESET}")
                 return
-            
+
             # Load initial weights
             initial_weights_path = "./server/models/initialized_model.pt"
             model.load_state_dict(torch.load(initial_weights_path))
-            
-            # Start training rounds
+
             for round_id in range(num_rounds):
                 print(f"\n{STYLES.FG_CYAN}=== Starting Round {round_id + 1}/{num_rounds} ==={STYLES.RESET}")
-                
-                # Select clients for this round
+
+                # Select clients
                 num_clients = len(self.clients)
                 num_selected = max(1, int(client_fraction * num_clients))
                 selected_clients = random.sample(list(self.clients.keys()), num_selected)
                 print(f"Selected clients for this round: {selected_clients}")
-                
-                # Collect responses from all selected clients
+
                 client_responses = []
                 total_samples = 0
-                
-                for client_id in selected_clients:
+
+                # Function to send training requests to clients
+                def train_client(client_id):
                     try:
                         client_ip, client_port = self.clients[client_id]
                         channel = grpc.insecure_channel(f"{client_ip}:{client_port}")
                         stub = file_transfer_grpc.ClientStub(channel)
-                        
-                        # Send current global model to client
-                        with open(f"./server/models/global_model_round_{round_id}.pt" if round_id > 0 else initial_weights_path, "rb") as f:
+
+                        # Send current global model
+                        model_weights_path = f"./server/models/global_model_round_{round_id}.pt" if round_id > 0 else initial_weights_path
+                        with open(model_weights_path, "rb") as f:
                             model_weights = f.read()
-                        
+
                         response = stub.StartTraining(file_transfer_pb2.TrainingRequest(
                             round_id=round_id,
                             model_version="1.0",
                             model_weights=model_weights,
                             local_epochs=fl_config["num_epochs"]
                         ))
-                        
-                        if response.err_code == 0:
+
+                        channel.close()
+                        return client_id, response
+
+                    except Exception as e:
+                        print(f"{STYLES.BG_RED}Error with client {client_id}: {str(e)}{STYLES.RESET}")
+                        return client_id, None
+
+                # Parallelize client training
+                with concurrent.futures.ThreadPoolExecutor(max_workers=num_selected) as executor:
+                    future_to_client = {executor.submit(train_client, client_id): client_id for client_id in selected_clients}
+
+                    for future in concurrent.futures.as_completed(future_to_client):
+                        client_id, response = future.result()
+                        if response and response.err_code == 0:
                             client_responses.append(response)
                             total_samples += response.samples_processed
                             print(f"Client {client_id} completed training successfully")
                         else:
-                            print(f"{STYLES.BG_RED}Client {client_id} failed: {response.msg}{STYLES.RESET}")
-                        
-                        channel.close()
-                    
-                    except Exception as e:
-                        print(f"{STYLES.BG_RED}Error with client {client_id}: {str(e)}{STYLES.RESET}")
-                
+                            print(f"{STYLES.BG_RED}Client {client_id} failed or did not respond{STYLES.RESET}")
+
                 if not client_responses:
                     print(f"{STYLES.BG_RED}No successful client responses in round {round_id + 1}{STYLES.RESET}")
                     break
-                
+
                 # Aggregate client updates (Federated Averaging)
                 avg_weights = {}
                 for response in client_responses:
@@ -255,57 +394,48 @@ class FLServer:
                     client_model_path = f"./server/models/client_{response.client_id}_round_{round_id}.pt"
                     with open(client_model_path, "wb") as f:
                         f.write(response.updated_weights)
-                    
+
                     # Load weights into model
                     client_model = model
                     client_model.load_state_dict(torch.load(client_model_path))
-                    
+
                     # Calculate weight for this client (proportional to samples)
                     client_weight = response.samples_processed / total_samples
-                    
+
                     # Add weighted contribution to average
                     for name, param in client_model.state_dict().items():
                         if name not in avg_weights:
                             avg_weights[name] = param * client_weight
                         else:
                             avg_weights[name] += param * client_weight
-                
+
                 # Update global model with averaged weights
                 model.load_state_dict(avg_weights)
-                
+
                 # Save new global model
                 global_model_path = f"./server/models/global_model_round_{round_id + 1}.pt"
                 torch.save(model.state_dict(), global_model_path)
 
+                # Evaluate new model
                 if model_type == "DiabetesMLP":
                     path_to_server_test_data = "../server_data/diabetes_dataset.csv"
-                    
-                    # Calculate metrics
                     loss, acc = evaluate_diabetes_model(global_model_path, path_to_server_test_data)
-                    print(f"Loss: {round(loss, 4)}")
-                    print(f"Accuracy: {round(acc, 4)}%")
-                
+
                 elif model_type == "FashionMNISTCNN":
                     path_to_server_test_data = "../server_data/fashion_mnist_dataset.csv"
-                    
-                    # Calculate metrics
                     loss, acc = evaluate_fashion_mnist_model(global_model_path, path_to_server_test_data)
-                    print(f"Loss: {round(loss, 4)}")
-                    print(f"Accuracy: {round(acc, 4)}%")
 
                 elif model_type == "MNISTMLP":
                     path_to_server_test_data = "../server_data/mnist_dataset.csv"
-                    
-                    # Calculate metrics
                     loss, acc = evaluate_mnist_model(global_model_path, path_to_server_test_data)
-                    print(f"Loss: {round(loss, 4)}")
-                    print(f"Accuracy: {round(acc, 4)}%")
 
+                print(f"Loss: {round(loss, 4)}")
+                print(f"Accuracy: {round(acc, 4)}%")
                 print(f"{STYLES.FG_GREEN}Round {round_id + 1} completed{STYLES.RESET}")
                 print(f"  Total Samples: {total_samples}")
-            
+
             print(f"\n{STYLES.FG_GREEN}Federated training completed after {num_rounds} rounds{STYLES.RESET}")
-            
+
         except Exception as e:
             print(f"{STYLES.BG_RED}Error during federated training: {str(e)}{STYLES.RESET}")
             logging.error(f"Error during federated training: {str(e)}", exc_info=True)
