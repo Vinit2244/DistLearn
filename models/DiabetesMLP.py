@@ -5,7 +5,7 @@ from sklearn.preprocessing import StandardScaler
 import pandas as pd
 import torch.optim as optim
 import argparse
-
+import logging
 
 # Custom dataset class
 class DiabetesDataset(Dataset):
@@ -91,7 +91,7 @@ def train_model(model, train_loader, criterion, optimizer, device, epochs):
         
         avg_loss = total_loss / len(train_loader)
         avg_accuracy = total_accuracy / len(train_loader)
-        print(f"Epoch {epoch+1}/{epochs}, Loss: {avg_loss:.4f}, Accuracy: {avg_accuracy:.2f}%")
+        logging.info(f"Epoch {epoch+1}/{epochs}, Loss: {round(avg_loss, 4)}, Accuracy: {round(avg_accuracy, 2)}%")
 
 
 def evaluate_model(path_to_weights, dataset_path, batch_size=64):
@@ -155,7 +155,8 @@ def main(args_list):
 
     # Save only the model weights
     torch.save(model.state_dict(), args.model_save_path)
-    print(f"Model weights saved to {args.model_save_path}")
+    logging.info(f"Model weights saved to {args.model_save_path}")
+    # print(f"Model weights saved to {args.model_save_path}")
 
 
 if __name__ == "__main__":

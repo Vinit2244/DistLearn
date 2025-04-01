@@ -4,8 +4,8 @@ from torch.utils.data import Dataset, DataLoader
 import torch.optim as optim
 import argparse
 import pandas as pd
-from tqdm import tqdm
-
+# from tqdm import tqdm
+import logging
 
 class FashionMNISTDataset(Dataset):
     def __init__(self, csv_file):
@@ -73,7 +73,8 @@ def train_model(model, train_loader, criterion, optimizer, device, epochs):
         total_loss = 0
         total_accuracy = 0
         
-        for images, labels in tqdm(train_loader, desc=f'Epoch {epoch+1}/{epochs}'):
+        for images, labels in train_loader:
+        # for images, labels in tqdm(train_loader, desc=f'Epoch {epoch+1}/{epochs}'):
             images, labels = images.to(device), labels.to(device)
             
             optimizer.zero_grad()
@@ -87,7 +88,8 @@ def train_model(model, train_loader, criterion, optimizer, device, epochs):
         
         avg_loss = total_loss / len(train_loader)
         avg_accuracy = total_accuracy / len(train_loader)
-        print(f"Epoch {epoch+1}/{epochs}, Loss: {avg_loss:.4f}, Accuracy: {avg_accuracy:.2f}%")
+        # print(f"Epoch {epoch+1}/{epochs}, Loss: {avg_loss:.4f}, Accuracy: {avg_accuracy:.2f}%")
+        logging.info(f"Epoch {epoch+1}/{epochs}, Loss: {round(avg_loss, 4)}, Accuracy: {round(avg_accuracy, 2)}%")
 
 
 def evaluate_model(path_to_weights, dataset_path, batch_size=64):
@@ -149,7 +151,8 @@ def main(args_list):
 
     # Save only the model weights
     torch.save(model.state_dict(), args.model_save_path)
-    print(f"Model weights saved to {args.model_save_path}")
+    logging.info(f"Model weights saved to {args.model_save_path}")
+    # print(f"Model weights saved to {args.model_save_path}")
 
 
 if __name__ == "__main__":

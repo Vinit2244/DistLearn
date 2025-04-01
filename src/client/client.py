@@ -17,7 +17,7 @@ sys.path.append(os.path.join(os.path.dirname(__file__), '..', '..','src','genera
 import file_transfer_pb2
 import file_transfer_pb2_grpc as file_transfer_grpc
 
-sys.path.append("../../src/utils")
+sys.path.append(os.path.join(os.path.dirname(__file__), '..', '..','src','utils'))
 from utils import clear_screen, wait_for_enter, get_server_address, get_ip, STYLES, CHUNK_SIZE
 
 
@@ -152,8 +152,9 @@ class Client:
             logging.info(f"Model weights loaded from {model_path}")
             
             logging.info("Federated learning initialized successfully")
-            print(f"{STYLES.FG_GREEN}Federated learning initialized successfully with model {model_type}{STYLES.RESET}")
-            print(f"{STYLES.FG_CYAN}Training config: {num_epochs} epochs, {optimizer_type} optimizer, LR={learning_rate}, batch size={batch_size}{STYLES.RESET}")
+            logging.info(f"Model type: {model_type}, Epochs: {num_epochs}, Optimizer: {optimizer_type}, Learning rate: {learning_rate}, Batch size: {batch_size}")
+            # print(f"{STYLES.FG_GREEN}Federated learning initialized successfully with model {model_type}{STYLES.RESET}")
+            # print(f"{STYLES.FG_CYAN}Training config: {num_epochs} epochs, {optimizer_type} optimizer, LR={learning_rate}, batch size={batch_size}{STYLES.RESET}")
             
             # Here you could start training immediately or wait for a separate start command
             # For now, we'll just save the initialized model for verification
@@ -164,7 +165,7 @@ class Client:
             
         except Exception as e:
             logging.error(f"Error initializing federated learning: {str(e)}", exc_info=True)
-            print(f"{STYLES.BG_RED}Error initializing federated learning: {str(e)}{STYLES.RESET}")
+            # print(f"{STYLES.BG_RED}Error initializing federated learning: {str(e)}{STYLES.RESET}")
 
 
 class ClientServicer(file_transfer_grpc.ClientServicer):
@@ -327,7 +328,10 @@ def menu():
         print("  4. Exit")
         print()
         choice = input(f"{STYLES.FG_YELLOW}Enter your choice: {STYLES.RESET}")
-        if choice == "1":
+        if choice == "":
+            continue
+
+        elif choice == "1":
             client.start_my_server()
             client.register_with_server()
             wait_for_enter()
@@ -387,6 +391,5 @@ if __name__ == "__main__":
     if mode.lower() == 'i':     # Interactive mode
         menu()
     elif mode.lower() == 'a':   # Automatic mode
-        ...
-        # client.start_my_server()
-        # client.register_with_server()
+        client.start_my_server()
+        client.register_with_server()

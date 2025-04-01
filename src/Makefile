@@ -4,7 +4,6 @@ OUT_DIR=generated
 # Allow overriding with certain cmd line args
 SERVER_PORT ?= 50051
 N_CLIENTS ?= 1
-CLIENT_ID ?= 1
 
 # Find all .proto files in the proto directory
 PROTO_FILES=$(wildcard $(PROTO_DIR)/*.proto)
@@ -37,5 +36,4 @@ clean:
 	rm -rf $(OUT_DIR)/*_pb2.py*
 	rm -rf $(OUT_DIR)/*_pb2_grpc.py*
 	find . -name "__pycache__" -type d -exec rm -rf {} +
-	rm -rf ./server/logs/*.log 
-	rm 
+	rm -rf ./server/logs/*.log

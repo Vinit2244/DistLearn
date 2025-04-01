@@ -6,14 +6,10 @@ service FLServer {
     rpc TransferFile (stream FileChunk) returns (FileResponse) {}
     rpc RegisterClient (ClientInfo) returns (ClientResponse) {}
     rpc DeregisterClient (ClientInfo) returns (ClientResponse) {}
-
-    // rpc InitialiseFL (FLConfig) returns (FLResponse) {}
-    // rpc StartTraining (TrainingRequest) returns (TrainingResponse) {}
 }
 
 service Client {
     rpc TransferFile (stream FileChunk) returns (FileResponse) {}
-    // rpc InitialiseFL (FLConfig) returns (FLResponse) {}
     rpc StartTraining (TrainingRequest) returns (TrainingResponse) {}
 }
 
