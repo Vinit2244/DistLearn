@@ -8,6 +8,7 @@ import random
 import logging
 import argparse
 import subprocess
+import numpy as np
 import seaborn as sns
 from pathlib import Path
 import concurrent.futures
@@ -36,6 +37,7 @@ optimizers = ["SGD", "Adam"]
 model_types = ["DiabetesMLP", "FashionMNISTCNN", "MNISTMLP"]
 losses = {}
 accuracies = {}
+ALPHA = 5
 
 
 # ============================= CLASSES =============================
@@ -136,8 +138,6 @@ class FLServer:
             print(f"{STYLES.BG_RED + STYLES.FG_WHITE}Error: {response.msg}{STYLES.RESET}")
 
     def initialize_fl(self, training_algo, num_epochs, learning_rate, optimizer, batch_size, model_type, client_fraction):
-        """ Initializes FL by saving the config file, initializing model, and sending them to clients """
-        
         fl_config_server = {
             "training_algo": training_algo,
             "num_epochs": num_epochs,
@@ -208,8 +208,11 @@ class FLServer:
             with open("./server/fl_config_server.json", "r") as f:
                 fl_config = json.load(f)
  
+            training_algo = fl_config["training_algo"]
             model_type = fl_config["model_type"]
             client_fraction = fl_config["client_fraction"]
+            lr = fl_config["learning_rate"]
+            optimizer = fl_config["optimizer"]
 
             # Initialize the appropriate model
             if model_type == model_types[0]:
@@ -225,6 +228,9 @@ class FLServer:
             # Load initial weights
             initial_weights_path = "./server/models/initialized_model.pt"
             model.load_state_dict(torch.load(initial_weights_path))
+
+            if model_type == model_types[2]:
+                smoothed_theta_arr = np.zeros(len(self.clients))
 
             for round_id in range(num_rounds):
                 print(f"\n{STYLES.FG_CYAN}=== Starting Round {round_id + 1}/{num_rounds} ==={STYLES.RESET}")
@@ -246,7 +252,7 @@ class FLServer:
                         stub = file_transfer_grpc.ClientStub(channel)
 
                         # Send current global model
-                        model_weights_path = f"./server/models/global_model_round_{round_id}.pt" if round_id > 0 else initial_weights_path
+                        model_weights_path = f"./server/models/global_model_round_{round_id - 1}.pt" if round_id > 0 else initial_weights_path
                         with open(model_weights_path, "rb") as f:
                             model_weights = f.read()
 
@@ -281,33 +287,73 @@ class FLServer:
                     print(f"{STYLES.BG_RED}No successful client responses in round {round_id + 1}{STYLES.RESET}")
                     break
 
-                # Aggregate client updates (Federated Averaging)
                 avg_weights = {}
+                weights_of_all_clients = []
+                num_samples_arr = []
+
+                ####### CHANGE THIS CODE TO GET THE FILE STREAMED FROM SERVER AS MAX SIZE OF MESSAGE IN GRPC IS 4MB ONLY #######    
+                # Write the updated weights to the file
                 for response in client_responses:
-                    # Save client's model weights
                     client_model_path = f"./server/models/client_{response.client_id}_round_{round_id}.pt"
                     with open(client_model_path, "wb") as f:
                         f.write(response.updated_weights)
+                    
+                if training_algo == training_algos[2]:
+                    for response in client_responses:
+                        client_model_path = f"./server/models/client_{response.client_id}_round_{round_id}.pt"
+                        client_state_dict = torch.load(client_model_path, map_location='cpu')
+                        client_weights = np.astype(torch.cat([v.flatten() for v in client_state_dict.values()]).numpy(), np.float32)
+                        weights_of_all_clients.append(client_weights)
+                        num_samples_arr.append(response.samples_processed)
 
-                    # Load weights into model
-                    client_model = model
-                    client_model.load_state_dict(torch.load(client_model_path))
+                # FedAdp
+                if training_algo == training_algos[2]:
+                    weights_of_all_clients = np.array(weights_of_all_clients)
+                    num_samples_arr = np.array(num_samples_arr)
 
-                    # Calculate weight for this client (proportional to samples)
-                    client_weight = response.samples_processed / total_samples
+                    theta_arr = self.get_theta_arr(weights_of_all_clients, num_samples_arr, round_id, initial_weights_path, lr)
+                    if round_id == 0:
+                        smoothed_theta_arr = theta_arr
+                    else:
+                        smoothed_theta_arr = (round_id * smoothed_theta_arr + theta_arr) / (round_id + 1)
+                    psi_arr = self.get_psi_arr(smoothed_theta_arr, num_samples_arr)
 
-                    # Add weighted contribution to average
-                    for name, param in client_model.state_dict().items():
-                        if name not in avg_weights:
-                            avg_weights[name] = param * client_weight
-                        else:
-                            avg_weights[name] += param * client_weight
+                    for idx, response in enumerate(client_responses):
+                        client_model_path = f"./server/models/client_{response.client_id}_round_{round_id}.pt"
+                        client_model = model
+                        client_model.load_state_dict(torch.load(client_model_path))
+                        
+                        for name, param in client_model.state_dict().items():
+                            if name not in avg_weights:
+                                avg_weights[name] = param * psi_arr[idx]
+                            else:
+                                avg_weights[name] += param * psi_arr[idx]
+
+                # FedSGD and FedAvg
+                else:
+                    # Aggregate client updates (Federated Averaging)
+                    for response in client_responses:
+                        client_model_path = f"./server/models/client_{response.client_id}_round_{round_id}.pt"
+
+                        # Load weights into model
+                        client_model = model
+                        client_model.load_state_dict(torch.load(client_model_path))
+
+                        # Calculate weight for this client (proportional to samples)
+                        client_weight = response.samples_processed / total_samples
+
+                        # Add weighted contribution to average
+                        for name, param in client_model.state_dict().items():
+                            if name not in avg_weights:
+                                avg_weights[name] = param * client_weight
+                            else:
+                                avg_weights[name] += param * client_weight
 
                 # Update global model with averaged weights
                 model.load_state_dict(avg_weights)
 
                 # Save new global model
-                global_model_path = f"./server/models/global_model_round_{round_id + 1}.pt"
+                global_model_path = f"./server/models/global_model_round_{round_id}.pt"
                 torch.save(model.state_dict(), global_model_path)
 
                 # Evaluate new model
@@ -326,13 +372,16 @@ class FLServer:
                 print(f"Loss: {round(loss, 4)}")
                 print(f"Accuracy: {round(acc, 4)}%")
 
+                model_name = f"{training_algo}_{model_type}_{optimizer}"
+
                 # Store loss and accuracy for this round for plotting after training
-                if losses.get(model_type) is None:
-                    losses[model_type] = []
-                if accuracies.get(model_type) is None:
-                    accuracies[model_type] = []
-                losses[model_type].append(loss)
-                accuracies[model_type].append(acc)
+                if losses.get(model_name) is None:
+                    losses[model_name] = []
+                if accuracies.get(model_name) is None:
+                    accuracies[model_name] = []
+
+                losses[model_name].append(loss)
+                accuracies[model_name].append(acc)
 
                 print(f"{STYLES.FG_GREEN}Round {round_id + 1} completed{STYLES.RESET}")
                 print(f"  Total Samples: {total_samples}")
@@ -340,12 +389,42 @@ class FLServer:
             print(f"\n{STYLES.FG_GREEN}Federated training completed after {num_rounds} rounds{STYLES.RESET}")
 
             # Plotting loss and accuracy
-            make_plots(len(self.clients))
+            make_plots(len(self.clients), model_name)
 
         except Exception as e:
             print(f"{STYLES.BG_RED}Error during federated training: {str(e)}{STYLES.RESET}")
             logging.error(f"Error during federated training: {str(e)}", exc_info=True)
 
+    def gompertz_func(self, theta_arr, alpha=ALPHA):
+        power_2 = -1 * alpha * (theta_arr - 1)
+        power_1 = -1 * (np.exp(power_2))
+        return alpha * (1 - np.exp(power_1))
+
+    def get_psi_arr(self, theta_arr, num_samples_arr):
+        # Psi array is weights for each client
+        Nr = num_samples_arr * np.exp(self.gompertz_func(theta_arr))
+        Dr = np.sum(Nr)
+        return Nr / Dr
+
+    def get_theta_arr(self, weights_arr, num_samples_arr, curr_round_id, initial_weights_path, lr):
+        model_weights_path = f"./server/models/global_model_round_{curr_round_id - 1}.pt" if curr_round_id > 0 else initial_weights_path
+
+        global_state_dict = torch.load(model_weights_path, map_location='cpu')
+        global_w_prev = np.astype(torch.cat([v.flatten() for v in global_state_dict.values()]).numpy(), np.float32)
+
+        gradients_arr = - 1 * (weights_arr - global_w_prev) / lr
+        global_gradient = np.zeros_like(global_w_prev)
+        total_samples = np.sum(num_samples_arr)
+        for i, client_gradient in enumerate(gradients_arr):
+            global_gradient += (num_samples_arr[i] / total_samples) * client_gradient
+
+        # Theta = arccos((gradients_arr . global_gradient) / (||gradients_arr|| * ||global_gradient||))
+        # where . is dot product and ||*|| is L2 norm
+        Nr_arr = np.array([np.dot(gradients_arr[i].flatten(), global_gradient.flatten()) for i in range(gradients_arr.shape[0])])
+        Dr_arr = np.array([np.linalg.norm(global_gradient) * np.linalg.norm(gradients_arr[i]) for i in range(gradients_arr.shape[0])])
+        theta_arr = np.arccos(Nr_arr / Dr_arr)
+        return theta_arr
+        
 
 class FLServerServicer(file_transfer_grpc.FLServerServicer):
     def __init__(self):
@@ -564,7 +643,7 @@ def menu():
             wait_for_enter()
 
 
-def make_plots(num_clients):
+def make_plots(num_clients, model_name):
     with open("./server/fl_config_server.json", "r") as f:
         fl_config = json.load(f)
     
@@ -578,8 +657,8 @@ def make_plots(num_clients):
     
     os.makedirs("./server/metric_plots", exist_ok=True)
 
-    loss_list = losses[model_type]
-    accuracy_list = accuracies[model_type]
+    loss_list = losses[model_name]
+    accuracy_list = accuracies[model_name]
 
     fig, axes = plt.subplots(1, 2, figsize=(14, 6))
 
@@ -605,6 +684,32 @@ def make_plots(num_clients):
                     Batch Size = {batch_size} | Client Frac = {client_fraction} | # Clients: {num_clients}", fontsize=16)
     plt.tight_layout()
     plt.savefig(f"./server/metric_plots/{model_type}_{training_algo}_{num_clients}_metrics.png", dpi=300)
+    plt.close(fig)
+
+    fig, axes = plt.subplots(1, 2, figsize=(14, 6))
+    for model_name, _ in losses.items():
+        try:
+            loss_list = losses[model_name]
+            accuracy_list = accuracies[model_name]
+        except:
+            continue
+
+        sns.lineplot(ax=axes[0], x=range(len(loss_list)), y=loss_list, label=model_name)
+        axes[0].set_xlabel("Round")
+        axes[0].set_ylabel("Loss")
+        axes[0].set_title(f"Loss Curve for Different Models")
+        axes[0].legend()
+        axes[0].grid(True)
+
+        sns.lineplot(ax=axes[1], x=range(len(accuracy_list)), y=accuracy_list, label=model_name)
+        axes[1].set_title(f"Accuracy Curve for Different Models")
+        axes[1].set_xlabel("Round")
+        axes[1].set_ylabel("Accuracy (%)")
+        axes[1].legend()
+        axes[1].grid(True)
+
+    plt.suptitle(f"Loss & Accuracy Curves for Different Models")
+    plt.savefig(f"./server/metric_plots/loss_curve_all_models.png", dpi=300)
     plt.close(fig)
 
 

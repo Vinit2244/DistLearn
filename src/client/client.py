@@ -116,7 +116,6 @@ class Client:
 
     def initialise_fl(self, config_path, model_path):
         sys.path.append("received_files")
-        """Initialize federated learning with the received config and model"""
         try:
             # Load the configuration
             with open(config_path, 'r') as f:
