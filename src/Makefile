@@ -3,7 +3,7 @@ OUT_DIR=generated
 
 # Allow overriding with certain cmd line args
 SERVER_PORT ?= 50051
-N_CLIENTS ?= 1
+N_CLIENTS ?= 3
 
 # Find all .proto files in the proto directory
 PROTO_FILES=$(wildcard $(PROTO_DIR)/*.proto)
@@ -23,7 +23,10 @@ start_server:
 	python3 server/fl_server.py --port=$(SERVER_PORT)
 
 setup:
-	python3 ../setup.py --num_clients=3 --visualize_initial --visualize_distributed
+	python3 ../setup.py --num_clients=$(N_CLIENTS)
+
+setup_and_visualise:
+	python3 ../setup.py --num_clients=$(N_CLIENTS) --visualize_initial --visualize_distributed
 
 start_clients:
 	@for i in $(shell seq 1 $(N_CLIENTS)); do \

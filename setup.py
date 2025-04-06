@@ -16,6 +16,7 @@ sns.set_theme(style="whitegrid", context="notebook", font_scale=1.2)
 PLOTS_DIR = "../plots"
 COLOR_PALETTE = "viridis"
 
+
 def create_folders_and_distribute_data(n, data_folder='../data', clients_folder='../clients', 
                                       server_data_folder='../server_data', client_script="./client/client.py"):
     # Create clients and server_data folders
@@ -56,8 +57,8 @@ def create_folders_and_distribute_data(n, data_folder='../data', clients_folder=
             client_data_folder = os.path.join(clients_folder, str(i), "data")
             client_data.to_csv(os.path.join(client_data_folder, dataset_file), index=False)
 
+
 def visualize_initial_data(data_folder='../data'):
-    """Save beautiful visualizations of original class distributions without annotations and with standardized y-axis"""
     os.makedirs(PLOTS_DIR, exist_ok=True)
     datasets = ['diabetes_dataset.csv', 'fashion_mnist_dataset.csv', 'mnist_dataset.csv']
     
@@ -95,20 +96,18 @@ def visualize_initial_data(data_folder='../data'):
         plt.xlabel('Class', labelpad=15, fontsize=14)
         plt.ylabel('Count', labelpad=15, fontsize=14)
         
-        # Add a light grid only on the y-axis for better readability
         ax.yaxis.grid(True, linestyle='--', alpha=0.6)
         
-        # Ensure no tick rotation and increase tick label size
         plt.xticks(fontsize=12)
         plt.yticks(fontsize=12)
-        
-        # Add more breathing room around the plot
+    
         plt.tight_layout(pad=3.0)
         
-        # Save the plot with high quality
+        # Save
         plot_path = os.path.join(PLOTS_DIR, f'initial_{dataset_name}.png')
         plt.savefig(plot_path, dpi=300, bbox_inches='tight', facecolor='white')
         plt.close()
+
 
 def visualize_distributed_data(clients_folder='../clients', server_data_folder='../server_data', num_clients=3):
     """Save professional visualizations of distributed class distributions with consistent y-axis and no annotations"""

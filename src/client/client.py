@@ -210,7 +210,7 @@ class ClientServicer(file_transfer_grpc.ClientServicer):
             
             return file_transfer_pb2.FileResponse(
                 err_code=0,
-                msg=f"File {filename} received successfully"
+                msg=f"File {filename} transferred successfully"
             )
                 
         except Exception as e:
@@ -230,14 +230,14 @@ class ClientServicer(file_transfer_grpc.ClientServicer):
             logging.info(f"Starting training for round {round_id}")
 
             if round_id < 1:
-                client.initialise_fl('received_files/fl_config.json', 'received_files/initialized_model.pt')
+                client.initialise_fl('received_files/fl_config_client.json', 'received_files/initialized_model.pt')
             
             # Save received model weights to file
             model_path = f"./models/round_{round_id}.pt"
             with open(model_path, "wb") as f:
                 f.write(model_weights)
 
-            with open('received_files/fl_config.json', 'r') as f:
+            with open('received_files/fl_config_client.json', 'r') as f:
                 config = json.load(f)
 
             # Extract configuration parameters
@@ -393,3 +393,4 @@ if __name__ == "__main__":
     elif mode.lower() == 'a':   # Automatic mode
         client.start_my_server()
         client.register_with_server()
+        wait_for_enter()

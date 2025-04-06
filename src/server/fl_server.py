@@ -1,16 +1,18 @@
 # ============================= IMPORTS =============================
-import argparse
-import logging
-from concurrent import futures
-import grpc
-import sys
 import os
-from pathlib import Path
+import sys
+import grpc
 import json
-import subprocess
 import torch
 import random
+import logging
+import argparse
+import subprocess
+import seaborn as sns
+from pathlib import Path
 import concurrent.futures
+from concurrent import futures
+import matplotlib.pyplot as plt
 
 sys.path.append(os.path.join(os.path.dirname(__file__), '..', 'generated'))
 import file_transfer_pb2
@@ -19,10 +21,21 @@ import file_transfer_pb2_grpc as file_transfer_grpc
 sys.path.append("utils")
 from utils import clear_screen, wait_for_enter, get_ip, STYLES, CHUNK_SIZE
 
+# Importing models to be trained
 sys.path.append("../models")
 from DiabetesMLP import DiabetesMLP, evaluate_model as evaluate_diabetes_model
 from FashionMNISTCNN import FashionMNISTCNN, evaluate_model as evaluate_fashion_mnist_model
 from MNISTMLP import MNISTMLP, evaluate_model as evaluate_mnist_model
+
+sns.set(style='whitegrid', context='talk')
+
+
+# ============================= GLOBALS =============================
+training_algos = ["FedSGD", "FedAvg", "FedAdp", "FedModCS"]
+optimizers = ["SGD", "Adam"]
+model_types = ["DiabetesMLP", "FashionMNISTCNN", "MNISTMLP"]
+losses = {}
+accuracies = {}
 
 
 # ============================= CLASSES =============================
@@ -117,16 +130,16 @@ class FLServer:
         response = stub.TransferFile(request_iterator())
         if response.err_code == 0:
             logging.info(f"File transfer successful: {response.msg}")
-            print(f"{STYLES.FG_GREEN}Success: {response.msg}{STYLES.RESET}")
+            print(f"{STYLES.FG_GREEN}Success: File sent successfully!{STYLES.RESET}")
         else:
             logging.error(f"File transfer failed: {response.msg}")
             print(f"{STYLES.BG_RED + STYLES.FG_WHITE}Error: {response.msg}{STYLES.RESET}")
 
-    def initialize_fl(self, num_epochs, learning_rate, optimizer, batch_size, model_type, client_fraction):
+    def initialize_fl(self, training_algo, num_epochs, learning_rate, optimizer, batch_size, model_type, client_fraction):
         """ Initializes FL by saving the config file, initializing model, and sending them to clients """
         
-        # Step 1: Create FL configuration file
-        fl_config = {
+        fl_config_server = {
+            "training_algo": training_algo,
             "num_epochs": num_epochs,
             "learning_rate": learning_rate,
             "optimizer": optimizer,
@@ -134,19 +147,34 @@ class FLServer:
             "model_type": model_type,
             "client_fraction": client_fraction
         }
-        config_path = "./server/fl_config.json"
+
+        fl_config_client = {
+            "num_epochs": num_epochs,
+            "learning_rate": learning_rate,
+            "optimizer": optimizer,
+            "batch_size": batch_size,
+            "model_type": model_type
+        }
+
+        config_path = "./server/fl_config_server.json"
         with open(config_path, "w") as f:
-            json.dump(fl_config, f)
+            json.dump(fl_config_server, f)
+
+        logging.info(f"FL Configuration (Server) saved at {config_path}")
+
+        config_path = "./server/fl_config_client.json"
+        with open(config_path, "w") as f:
+            json.dump(fl_config_client, f)
         
-        logging.info(f"FL Configuration saved at {config_path}")
+        logging.info(f"FL Configuration (Client) saved at {config_path}")
 
         # Step 2: Initialize model based on model_type
         model = None
-        if model_type == "DiabetesMLP":
+        if model_type == model_types[0]:
             model = DiabetesMLP(input_size=16)
-        elif model_type == "FashionMNISTCNN":
+        elif model_type == model_types[1]:
             model = FashionMNISTCNN()
-        elif model_type == "MNISTMLP":
+        elif model_type == model_types[2]:
             model = MNISTMLP()
         else:
             logging.error(f"Invalid model type: {model_type}")
@@ -163,6 +191,7 @@ class FLServer:
         num_selected = max(1, int(client_fraction * num_clients))
         selected_clients = random.sample(list(self.clients.keys()), num_selected)
         
+        print(f"{STYLES.FG_CYAN}Selected {num_selected}/{num_clients} clients for training.{STYLES.RESET}")
         logging.info(f"Selected {num_selected}/{num_clients} clients for training: {selected_clients}")
 
         # Step 4: Send config and model to each selected client
@@ -174,21 +203,20 @@ class FLServer:
         return selected_clients
 
     def start_federated_training(self, num_rounds):
-        """Start the federated training process with parallel client training"""
         try:
             # Load FL configuration
-            with open("./server/fl_config.json", "r") as f:
+            with open("./server/fl_config_server.json", "r") as f:
                 fl_config = json.load(f)
-
+ 
             model_type = fl_config["model_type"]
             client_fraction = fl_config["client_fraction"]
 
             # Initialize the appropriate model
-            if model_type == "DiabetesMLP":
+            if model_type == model_types[0]:
                 model = DiabetesMLP(input_size=16)
-            elif model_type == "FashionMNISTCNN":
+            elif model_type == model_types[1]:
                 model = FashionMNISTCNN()
-            elif model_type == "MNISTMLP":
+            elif model_type == model_types[2]:
                 model = MNISTMLP()
             else:
                 print(f"{STYLES.BG_RED}Invalid model type in config{STYLES.RESET}")
@@ -283,24 +311,36 @@ class FLServer:
                 torch.save(model.state_dict(), global_model_path)
 
                 # Evaluate new model
-                if model_type == "DiabetesMLP":
+                if model_type == model_types[0]:
                     path_to_server_test_data = "../server_data/diabetes_dataset.csv"
                     loss, acc = evaluate_diabetes_model(global_model_path, path_to_server_test_data)
 
-                elif model_type == "FashionMNISTCNN":
+                elif model_type == model_types[1]:
                     path_to_server_test_data = "../server_data/fashion_mnist_dataset.csv"
                     loss, acc = evaluate_fashion_mnist_model(global_model_path, path_to_server_test_data)
 
-                elif model_type == "MNISTMLP":
+                elif model_type == model_types[2]:
                     path_to_server_test_data = "../server_data/mnist_dataset.csv"
                     loss, acc = evaluate_mnist_model(global_model_path, path_to_server_test_data)
 
                 print(f"Loss: {round(loss, 4)}")
                 print(f"Accuracy: {round(acc, 4)}%")
+
+                # Store loss and accuracy for this round for plotting after training
+                if losses.get(model_type) is None:
+                    losses[model_type] = []
+                if accuracies.get(model_type) is None:
+                    accuracies[model_type] = []
+                losses[model_type].append(loss)
+                accuracies[model_type].append(acc)
+
                 print(f"{STYLES.FG_GREEN}Round {round_id + 1} completed{STYLES.RESET}")
                 print(f"  Total Samples: {total_samples}")
 
             print(f"\n{STYLES.FG_GREEN}Federated training completed after {num_rounds} rounds{STYLES.RESET}")
+
+            # Plotting loss and accuracy
+            make_plots(len(self.clients))
 
         except Exception as e:
             print(f"{STYLES.BG_RED}Error during federated training: {str(e)}{STYLES.RESET}")
@@ -376,7 +416,7 @@ class FLServerServicer(file_transfer_grpc.FLServerServicer):
             logging.info(f"File transfer completed. Total chunks: {total_chunks}, Total bytes: {total_bytes}")
             return file_transfer_pb2.FileResponse(
                 err_code=0,
-                msg=f"File {filename} received successfully"
+                msg=f"File {filename} transferred successfully"
             )
                 
         except Exception as e:
@@ -400,6 +440,7 @@ def menu():
         print("  4. Start Federated Training")
         print()
         choice = input(f"{STYLES.FG_YELLOW}Enter your choice: {STYLES.RESET}")
+        
         if choice == "1":
             file_path = input(f"{STYLES.FG_YELLOW}Enter the file path: {STYLES.RESET}")
             if not Path(file_path).is_file():
@@ -408,6 +449,10 @@ def menu():
             try:
                 if client_id.lower() == "all":
                     all_client_ids = fl_server.clients.keys()
+                    if len(all_client_ids) == 0:
+                        print(f"{STYLES.BG_RED}No clients registered. Please wait for clients to connect.{STYLES.RESET}")
+                        wait_for_enter()
+                        continue
                     for client_id in all_client_ids:
                         fl_server.send_file_to_client(file_path, client_id)
                 else:
@@ -418,39 +463,73 @@ def menu():
                 wait_for_enter()
                 continue
             wait_for_enter()
+        
         elif choice == "2":
             break
+        
         elif choice == "3":
-            num_epochs = int(input(f"{STYLES.FG_YELLOW}Enter number of epochs: {STYLES.RESET}"))
-            learning_rate = float(input(f"{STYLES.FG_YELLOW}Enter learning rate: {STYLES.RESET}"))
-            optimizer = input(f"{STYLES.FG_YELLOW}Enter optimizer (SGD/Adam): {STYLES.RESET}")
-            batch_size = int(input(f"{STYLES.FG_YELLOW}Enter batch size: {STYLES.RESET}"))
-            model_type = input(f"{STYLES.FG_YELLOW}Enter model type (DiabetesMLP/FashionMNISTCNN/MNISTMLP): {STYLES.RESET}")
-            client_fraction = float(input(f"{STYLES.FG_YELLOW}Enter client fraction: {STYLES.RESET}"))
+            # Select Algorithm
+            print(f"{STYLES.FG_YELLOW}Enter the training algorithm: {STYLES.RESET}")
+            for i, algo in enumerate(training_algos, 1):
+                print(f"  {i}. {algo}")
+            training_algo = int(input(f"{STYLES.FG_YELLOW}Enter your choice: {STYLES.RESET}"))
+            if training_algo not in range(1, len(training_algos) + 1):
+                print(f"{STYLES.BG_RED}Invalid choice. Please try again.{STYLES.RESET}")
+                wait_for_enter()
+                continue
 
-            # Validate inputs
-            if optimizer not in ["SGD", "Adam"]:
-                print(f"{STYLES.BG_RED}Invalid optimizer. Please enter SGD or Adam.{STYLES.RESET}")
+            # Number of epochs
+            if training_algo - 1 == 0:
+                num_epochs = 1
+            else:
+                num_epochs = int(input(f"{STYLES.FG_YELLOW}Enter number of epochs: {STYLES.RESET}"))
+
+            # Learning Rate
+            learning_rate = float(input(f"{STYLES.FG_YELLOW}Enter learning rate: {STYLES.RESET}"))
+            
+            # Optimizer
+            print(f"{STYLES.FG_YELLOW}Enter the optimizer: {STYLES.RESET}")
+            for i, opt in enumerate(optimizers, 1):
+                print(f"  {i}. {opt}")
+            optimizer = int(input(f"{STYLES.FG_YELLOW}Enter optimizer: {STYLES.RESET}"))
+            if optimizer not in range(1, len(optimizers) + 1):
+                print(f"{STYLES.BG_RED}Invalid choice. Please try again.{STYLES.RESET}")
                 wait_for_enter()
                 continue
-                
-            if model_type not in ["DiabetesMLP", "FashionMNISTCNN", "MNISTMLP"]:
-                print(f"{STYLES.BG_RED}Invalid model type. Please enter DiabetesMLP, FashionMNISTCNN, or MNISTMLP.{STYLES.RESET}")
+
+            # Batch size
+            batch_size = int(input(f"{STYLES.FG_YELLOW}Enter batch size: {STYLES.RESET}"))
+            if batch_size <= 0:
+                print(f"{STYLES.BG_RED}Batch size must be positive{STYLES.RESET}")
                 wait_for_enter()
                 continue
-                
+            
+            # Model type
+            print(f"{STYLES.FG_YELLOW}Enter the model type: {STYLES.RESET}")
+            for i, model in enumerate(model_types, 1):
+                print(f"  {i}. {model}")
+            model_type = int(input(f"{STYLES.FG_YELLOW}Enter model type: {STYLES.RESET}"))
+            if model_type not in range(1, len(model_types) + 1):
+                print(f"{STYLES.BG_RED}Invalid choice. Please try again.{STYLES.RESET}")
+                wait_for_enter()
+                continue
+
+            # Client fraction
+            client_fraction = float(input(f"{STYLES.FG_YELLOW}Enter client fraction: {STYLES.RESET}"))
             if client_fraction <= 0 or client_fraction > 1:
                 print(f"{STYLES.BG_RED}Invalid client fraction. Value must be between 0.0 and 1.0.{STYLES.RESET}")
                 wait_for_enter()
                 continue
             
+            # Check if clients are registered or not
             if len(fl_server.clients) == 0:
                 print(f"{STYLES.BG_RED}No clients registered. Please wait for clients to connect.{STYLES.RESET}")
                 wait_for_enter()
                 continue
             
             try:
-                selected_clients = fl_server.initialize_fl(num_epochs, learning_rate, optimizer, batch_size, model_type, client_fraction)
+                selected_clients = fl_server.initialize_fl(training_algos[training_algo - 1], num_epochs, learning_rate, optimizers[optimizer - 1], 
+                                                           batch_size, model_types[model_type - 1], client_fraction)
                 print(f"{STYLES.FG_GREEN}Federated learning initialized successfully!{STYLES.RESET}")
                 print(f"{STYLES.FG_CYAN}Selected {len(selected_clients)}/{len(fl_server.clients)} clients for training.{STYLES.RESET}")
                 print(f"{STYLES.FG_CYAN}Client IDs: {', '.join(map(str, selected_clients))}{STYLES.RESET}")
@@ -460,7 +539,7 @@ def menu():
             wait_for_enter()
 
         elif choice == "4":
-            if not Path("./server/fl_config.json").exists():
+            if not Path("./server/fl_config_server.json").exists():
                 print(f"{STYLES.BG_RED}FL not initialized. Please initialize first.{STYLES.RESET}")
                 wait_for_enter()
                 continue
@@ -469,8 +548,9 @@ def menu():
                 print(f"{STYLES.BG_RED}No clients registered. Please wait for clients to connect.{STYLES.RESET}")
                 wait_for_enter()
                 continue
-                
-            num_rounds = int(input(f"{STYLES.FG_YELLOW}Enter number of training rounds: {STYLES.RESET}"))
+            
+            # Number of rounds
+            num_rounds = int(input(f"{STYLES.FG_YELLOW}Enter number of training rounds (Epochs at server side): {STYLES.RESET}"))
             if num_rounds <= 0:
                 print(f"{STYLES.BG_RED}Number of rounds must be positive{STYLES.RESET}")
                 wait_for_enter()
@@ -478,10 +558,54 @@ def menu():
                 
             fl_server.start_federated_training(num_rounds)
             wait_for_enter()          
-
+        
         else:
             print(f"{STYLES.BG_RED}Invalid choice. Please try again.{STYLES.RESET}")
             wait_for_enter()
+
+
+def make_plots(num_clients):
+    with open("./server/fl_config_server.json", "r") as f:
+        fl_config = json.load(f)
+    
+    training_algo = fl_config["training_algo"]
+    num_epochs = fl_config["num_epochs"]
+    learning_rate = fl_config["learning_rate"]
+    optimizer = fl_config["optimizer"]
+    batch_size = fl_config["batch_size"]
+    model_type = fl_config["model_type"]
+    client_fraction = fl_config["client_fraction"]
+    
+    os.makedirs("./server/metric_plots", exist_ok=True)
+
+    loss_list = losses[model_type]
+    accuracy_list = accuracies[model_type]
+
+    fig, axes = plt.subplots(1, 2, figsize=(14, 6))
+
+    # Plot Loss
+    sns.lineplot(ax=axes[0], x=range(len(loss_list)), y=loss_list, label='Loss', color='steelblue')
+    axes[0].set_title(f"Loss Curve")
+    axes[0].set_xlabel("Round")
+    axes[0].set_ylabel("Loss")
+    axes[0].legend()
+    axes[0].grid(True)
+
+    # Plot Accuracy
+    sns.lineplot(ax=axes[1], x=range(len(accuracy_list)), y=accuracy_list, label='Accuracy', color='darkorange')
+    axes[1].set_title(f"Accuracy Curve")
+    axes[1].set_xlabel("Round")
+    axes[1].set_ylabel("Accuracy (%)")
+    axes[1].legend()
+    axes[1].grid(True)
+
+    # Adjust layout and save
+    plt.suptitle(f"Federated Learning Metrics\nModel Type: {model_type} | Algorithm: {training_algo} | Rounds (Server): {len(loss_list)}\n \
+                    Epochs (Client): {num_epochs} | Learning Rate = {learning_rate} | Optimizer = {optimizer}\n \
+                    Batch Size = {batch_size} | Client Frac = {client_fraction} | # Clients: {num_clients}", fontsize=16)
+    plt.tight_layout()
+    plt.savefig(f"./server/metric_plots/{model_type}_{training_algo}_{num_clients}_metrics.png", dpi=300)
+    plt.close(fig)
 
 
 # ============================= MAIN =============================
@@ -493,9 +617,6 @@ if __name__ == "__main__":
     my_port = args.port
     my_ip = get_ip()
 
-    global fl_server
-    fl_server = FLServer(my_port, my_ip)
-
     os.makedirs("./server/logs", exist_ok=True)
 
     logging.basicConfig(
@@ -503,5 +624,8 @@ if __name__ == "__main__":
         level=logging.INFO,
         format="%(asctime)s - %(levelname)s - %(message)s"
     )
+
+    global fl_server
+    fl_server = FLServer(my_port, my_ip)
 
     menu()
