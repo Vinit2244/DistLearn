@@ -17,7 +17,7 @@ PLOTS_DIR = "../plots"
 COLOR_PALETTE = "viridis"
 
 
-def create_folders_and_distribute_data(n, data_folder='../data', clients_folder='../clients', 
+def create_folders_and_distribute_data(n, IID, NonIID, x, data_folder='../data', clients_folder='../clients', 
                                       server_data_folder='../server_data', client_script="./client/client.py"):
     # Create clients and server_data folders
     os.makedirs(clients_folder, exist_ok=True)
@@ -27,35 +27,53 @@ def create_folders_and_distribute_data(n, data_folder='../data', clients_folder=
     if not os.path.exists(client_script):
         raise FileNotFoundError(f"Client script not found at {client_script}")
     
-    # Create client folders
+    # Create client folders and copy client script into each one
     for i in range(1, n + 1):
         client_dir = os.path.join(clients_folder, str(i))
         os.makedirs(client_dir, exist_ok=True)
         os.makedirs(os.path.join(client_dir, "data"), exist_ok=True)
-
-        # Copy client.py to each client folder
         shutil.copy(client_script, client_dir)
     
-    # List of dataset files
+    # List of dataset files to process
     dataset_files = ['diabetes_dataset.csv', 'fashion_mnist_dataset.csv', 'mnist_dataset.csv']
     
     for dataset_file in dataset_files:
         # Load the dataset
         dataset_path = os.path.join(data_folder, dataset_file)
         data = pd.read_csv(dataset_path)
-        
-        # Split the data into server test data (10%) and remaining data (90%)
-        train_data, test_data = train_test_split(data, test_size=0.1, random_state=42)
+
+        train_data, test_data = train_test_split(data, test_size=0.01, random_state=42)
         
         # Save the test data to the server_data folder
         test_data.to_csv(os.path.join(server_data_folder, dataset_file), index=False)
         
-        # Split the remaining data equally among the clients
-        client_data_splits = np.array_split(train_data, n)
-        
-        for i, client_data in enumerate(client_data_splits, start=1):
-            client_data_folder = os.path.join(clients_folder, str(i), "data")
-            client_data.to_csv(os.path.join(client_data_folder, dataset_file), index=False)
+        if dataset_file == 'diabetes_dataset.csv':
+            # Split the remaining data equally among the clients
+            client_data_splits = np.array_split(train_data, n)
+            for i, client_data in enumerate(client_data_splits, start=1):
+                client_data_folder = os.path.join(clients_folder, str(i), "data")
+                client_data.to_csv(os.path.join(client_data_folder, dataset_file), index=False)
+        else:
+            # Identify label column and unique classes in the dataset
+            label_column = data.columns[-1]
+            unique_classes = np.unique(train_data[label_column])
+            
+            for i in range(1, n + 1):
+                if i <= IID:
+                    client_sample = train_data.sample(n=600, random_state=42 + i)
+                else:
+                    # Non-IID: randomly select a single class for this client.
+                    selected_class = np.random.choice(unique_classes)
+                    subset = train_data[train_data[label_column] == selected_class]
+
+                    replace_flag = len(subset) < 600
+                    client_sample = subset.sample(n=600, replace=replace_flag, random_state=42 + i)
+                
+                client_data_folder = os.path.join(clients_folder, str(i), "data")
+                client_sample.to_csv(os.path.join(client_data_folder, dataset_file), index=False)
+                    
+                client_data_folder = os.path.join(clients_folder, str(i), "data")
+                client_sample.to_csv(os.path.join(client_data_folder, dataset_file), index=False)
 
 
 def visualize_initial_data(data_folder='../data'):
@@ -231,12 +249,17 @@ if __name__ == "__main__":
     argparser.add_argument("--num_clients", type=int, default=3)
     argparser.add_argument("--visualize_initial", action="store_true")
     argparser.add_argument("--visualize_distributed", action="store_true")
+    argparser.add_argument('--IID', type=int, required=True, help="Number of IID clients")
+    argparser.add_argument('--NonIID', type=int, required=True, help="Number of Non-IID clients")
+    argparser.add_argument('--x', type=int, required=True, help="Number of classes at the Non-IID clients")
     
     args = argparser.parse_args()
-    create_folders_and_distribute_data(n=args.num_clients)
+    create_folders_and_distribute_data(n=args.num_clients, IID=args.IID, NonIID=args.NonIID, x=args.x)
     
     if args.visualize_initial:
         visualize_initial_data(data_folder='../data')
     
     if args.visualize_distributed:
         visualize_distributed_data(num_clients=args.num_clients)
+
+

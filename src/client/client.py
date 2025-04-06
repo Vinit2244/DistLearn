@@ -20,6 +20,8 @@ import file_transfer_pb2_grpc as file_transfer_grpc
 sys.path.append(os.path.join(os.path.dirname(__file__), '..', '..','src','utils'))
 from utils import clear_screen, wait_for_enter, get_server_address, get_ip, STYLES, CHUNK_SIZE
 
+client_abs_path = Path(__file__).parent.resolve()
+
 
 # ============================= CLASSES ==============================
 class Client:
@@ -53,7 +55,6 @@ class Client:
 
         response = server_stub.RegisterClient(request_obj)
         if response.err_code == 0:
-            print(f"{STYLES.FG_GREEN}Client {self.id} successfully registered with FL server{STYLES.RESET}")
             logging.info(f"Client {self.id} successfully registered with FL server")
         else:
             logging.error(response.msg)
@@ -73,7 +74,6 @@ class Client:
 
         response = server_stub.DeregisterClient(request_obj)
         if response.err_code == 0:
-            print(f"{STYLES.FG_GREEN}Client {self.id} successfully deregistered from FL Server{STYLES.RESET}")
             logging.info(f"Client {self.id} successfully deregistered from FL Server")
             self.server.stop(0)
             self.server = None
@@ -109,13 +109,11 @@ class Client:
         response = server_stub.TransferFile(request_iterator())
         if response.err_code == 0:
             logging.info(f"File transfer successful: {response.msg}")
-            print(f"{STYLES.FG_GREEN}Success: {response.msg}{STYLES.RESET}")
         else:
             logging.error(f"File transfer failed: {response.msg}")
-            print(f"{STYLES.BG_RED + STYLES.FG_WHITE}Error: {response.msg}{STYLES.RESET}")
 
     def initialise_fl(self, config_path, model_path):
-        sys.path.append("received_files")
+        sys.path.append(os.path.join(os.path.dirname(__file__), 'received_files'))
         try:
             # Load the configuration
             with open(config_path, 'r') as f:
@@ -152,19 +150,16 @@ class Client:
             
             logging.info("Federated learning initialized successfully")
             logging.info(f"Model type: {model_type}, Epochs: {num_epochs}, Optimizer: {optimizer_type}, Learning rate: {learning_rate}, Batch size: {batch_size}")
-            # print(f"{STYLES.FG_GREEN}Federated learning initialized successfully with model {model_type}{STYLES.RESET}")
-            # print(f"{STYLES.FG_CYAN}Training config: {num_epochs} epochs, {optimizer_type} optimizer, LR={learning_rate}, batch size={batch_size}{STYLES.RESET}")
-            
+
             # Here you could start training immediately or wait for a separate start command
             # For now, we'll just save the initialized model for verification
-            save_path = Path(__file__).parent / 'models'
+            save_path = client_abs_path / 'models'
             save_path.mkdir(exist_ok=True)
             torch.save(model.state_dict(), save_path / f"round_0.pt")
             logging.info(f"Initialized model saved to {save_path}/round_0.pt")
             
         except Exception as e:
             logging.error(f"Error initializing federated learning: {str(e)}", exc_info=True)
-            # print(f"{STYLES.BG_RED}Error initializing federated learning: {str(e)}{STYLES.RESET}")
 
 
 class ClientServicer(file_transfer_grpc.ClientServicer):
@@ -182,7 +177,7 @@ class ClientServicer(file_transfer_grpc.ClientServicer):
                     msg="No data received from client"
                 )
             
-            received_dir = Path(__file__).parent / 'received_files'
+            received_dir = client_abs_path / 'received_files'
             received_dir.mkdir(exist_ok=True)
             # logging.info(f"Created/verified received_files directory at {received_dir}")
             
@@ -229,14 +224,14 @@ class ClientServicer(file_transfer_grpc.ClientServicer):
             logging.info(f"Starting training for round {round_id}")
 
             if round_id < 1:
-                client.initialise_fl('received_files/fl_config_client.json', 'received_files/initialized_model.pt')
+                client.initialise_fl(client_abs_path / 'received_files' / 'fl_config_client.json', client_abs_path / 'received_files' / 'initialized_model.pt')
             
             # Save received model weights to file
-            model_path = f"./models/round_{round_id}.pt"
+            model_path = client_abs_path / "models" / f"round_{round_id}.pt"
             with open(model_path, "wb") as f:
                 f.write(model_weights)
 
-            with open('received_files/fl_config_client.json', 'r') as f:
+            with open(client_abs_path / 'received_files' / 'fl_config_client.json', 'r') as f:
                 config = json.load(f)
 
             # Extract configuration parameters
@@ -264,15 +259,15 @@ class ClientServicer(file_transfer_grpc.ClientServicer):
             if model_type == "DiabetesMLP":
                 criterion = torch.nn.BCELoss()
                 optimizer = get_diabetes_optimizer(model, optimizer_type, learning_rate)
-                dataset = DiabetesDataset("./data/diabetes_dataset.csv")
+                dataset = DiabetesDataset(client_abs_path / "data/diabetes_dataset.csv")
             elif model_type == "FashionMNISTCNN":
                 criterion = torch.nn.CrossEntropyLoss()
                 optimizer = get_fashion_mnist_optimizer(model, optimizer_type, learning_rate)
-                dataset = FashionMNISTDataset("./data/fashion_mnist_dataset.csv")
+                dataset = FashionMNISTDataset(client_abs_path / "data/fashion_mnist_dataset.csv")
             elif model_type == "MNISTMLP":
                 criterion = torch.nn.CrossEntropyLoss()
                 optimizer = get_mnist_optimizer(model, optimizer_type, learning_rate)
-                dataset = MNISTDataset("./data/mnist_dataset.csv")
+                dataset = MNISTDataset(client_abs_path / "data/mnist_dataset.csv")
             else:
                 raise ValueError(f"Unsupported model type: {model_type}")       
            
@@ -290,7 +285,7 @@ class ClientServicer(file_transfer_grpc.ClientServicer):
                 raise ValueError(f"Unsupported model type: {model_type}")
             
             # Save the trained model weights
-            trained_model_path = f"./models/round_{round_id}_trained.pt"
+            trained_model_path = client_abs_path / f"models/round_{round_id}_trained.pt"
             torch.save(model.state_dict(), trained_model_path)
 
             # Send the trained model weights back to the server
@@ -377,14 +372,17 @@ if __name__ == "__main__":
     global client
     client = Client(my_id, my_ip, my_port)
 
-    os.makedirs("./logs", exist_ok=True)
+    os.makedirs(client_abs_path / "logs", exist_ok=True)
 
     # Logging configuration
     logging.basicConfig(
-        filename=f"./logs/client_{my_id}.log",
+        filename=client_abs_path / "logs" / f"client_{my_id}.log",
         level=logging.INFO,
         format="%(asctime)s - %(levelname)s - %(message)s"
     )
+
+    logging.info(f"Client {my_id} started with IP {my_ip} and port {my_port}")
+    logging.info(f"Pid: {os.getpid()}")
 
     # 'a' mode for testing using multiple clients
     if mode.lower() == 'i':     # Interactive mode
@@ -392,4 +390,5 @@ if __name__ == "__main__":
     elif mode.lower() == 'a':   # Automatic mode
         client.start_my_server()
         client.register_with_server()
-        wait_for_enter()
+        while True:
+            ...
