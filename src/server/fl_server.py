@@ -182,7 +182,7 @@ class FLServer:
 
         os.makedirs("./server/models", exist_ok=True)
         
-        model_path = "./server/models/initialized_model.pt"
+        model_path = "./server/models/global_model_round_0.pt"
         torch.save(model.state_dict(), model_path)
         logging.info(f"Initialized model saved at {model_path}")
 
@@ -226,7 +226,7 @@ class FLServer:
                 return
 
             # Load initial weights
-            initial_weights_path = "./server/models/initialized_model.pt"
+            initial_weights_path = "./server/models/global_model_round_0.pt"
             model.load_state_dict(torch.load(initial_weights_path))
 
             if model_type == model_types[2]:
@@ -252,15 +252,18 @@ class FLServer:
                         stub = file_transfer_grpc.ClientStub(channel)
 
                         # Send current global model
-                        model_weights_path = f"./server/models/global_model_round_{round_id - 1}.pt" if round_id > 0 else initial_weights_path
-                        with open(model_weights_path, "rb") as f:
-                            model_weights = f.read()
+                        model_weights_path = f"./server/models/global_model_round_{round_id}.pt"
+                        self.send_file_to_client(model_weights_path, client_id)
+                        logging.info(f"Sent model weights to client {client_id}")
+                        # with open(model_weights_path, "rb") as f:
+                        #     model_weights = f.read()
 
                         response = stub.StartTraining(file_transfer_pb2.TrainingRequest(
                             round_id=round_id,
                             model_version="1.0",
-                            model_weights=model_weights,
-                            local_epochs=fl_config["num_epochs"]
+                            # model_weights=model_weights,
+                            local_epochs=fl_config["num_epochs"],
+                            model_path = model_weights_path.split('/')[-1]
                         ))
 
                         channel.close()
@@ -293,14 +296,15 @@ class FLServer:
 
                 ####### CHANGE THIS CODE TO GET THE FILE STREAMED FROM SERVER AS MAX SIZE OF MESSAGE IN GRPC IS 4MB ONLY #######    
                 # Write the updated weights to the file
-                for response in client_responses:
-                    client_model_path = f"./server/models/client_{response.client_id}_round_{round_id}.pt"
-                    with open(client_model_path, "wb") as f:
-                        f.write(response.updated_weights)
+                # for response in client_responses:
+                #     client_model_path = f"./server/models/client_{response.client_id}_round_{round_id}.pt"
+                    # with open(client_model_path, "wb") as f:
+                    #     f.write(response.updated_weights)
                     
                 if training_algo == training_algos[2]:
                     for response in client_responses:
-                        client_model_path = f"./server/models/client_{response.client_id}_round_{round_id}.pt"
+                        # client_model_path = f"./server/models/client_{response.client_id}_round_{round_id}.pt"
+                        client_model_path = f"./server/received_files/{response.client_id}/round_{round_id}_trained.pt"
                         client_state_dict = torch.load(client_model_path, map_location='cpu')
                         client_weights = np.astype(torch.cat([v.flatten() for v in client_state_dict.values()]).numpy(), np.float32)
                         weights_of_all_clients.append(client_weights)
@@ -319,7 +323,8 @@ class FLServer:
                     psi_arr = self.get_psi_arr(smoothed_theta_arr, num_samples_arr)
 
                     for idx, response in enumerate(client_responses):
-                        client_model_path = f"./server/models/client_{response.client_id}_round_{round_id}.pt"
+                        # client_model_path = f"./server/models/client_{response.client_id}_round_{round_id}.pt"
+                        client_model_path = f"./server/received_files/{response.client_id}/round_{round_id}_trained.pt"
                         client_model = model
                         client_model.load_state_dict(torch.load(client_model_path))
                         
@@ -333,7 +338,8 @@ class FLServer:
                 else:
                     # Aggregate client updates (Federated Averaging)
                     for response in client_responses:
-                        client_model_path = f"./server/models/client_{response.client_id}_round_{round_id}.pt"
+                        # client_model_path = f"./server/models/client_{response.client_id}_round_{round_id}.pt"
+                        client_model_path = f"./server/received_files/{response.client_id}/round_{round_id}_trained.pt"
 
                         # Load weights into model
                         client_model = model
@@ -353,7 +359,7 @@ class FLServer:
                 model.load_state_dict(avg_weights)
 
                 # Save new global model
-                global_model_path = f"./server/models/global_model_round_{round_id}.pt"
+                global_model_path = f"./server/models/global_model_round_{round_id+1}.pt"
                 torch.save(model.state_dict(), global_model_path)
 
                 # Evaluate new model

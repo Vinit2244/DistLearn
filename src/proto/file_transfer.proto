@@ -56,7 +56,7 @@ message FLResponse {
 message TrainingRequest {
     int32 round_id = 1;
     string model_version = 2;
-    bytes model_weights = 3;
+    string model_path = 3;
     int32 local_epochs = 4;
 }
 
@@ -66,8 +66,5 @@ message TrainingResponse {
     string msg = 2;
     int32 client_id = 3;
     int32 round_id = 4;
-    bytes updated_weights = 5;
-    float training_loss = 6;
-    float accuracy = 7;
-    int32 samples_processed = 8;
+    int32 samples_processed = 5;
 }

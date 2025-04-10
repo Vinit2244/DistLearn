@@ -218,18 +218,19 @@ class ClientServicer(file_transfer_grpc.ClientServicer):
         try:
             # Extract training parameters from request
             round_id = request.round_id
-            model_weights = request.model_weights
+            # model_weights = request.model_weights
             local_epochs = request.local_epochs
             
             logging.info(f"Starting training for round {round_id}")
 
             if round_id < 1:
-                client.initialise_fl(client_abs_path / 'received_files' / 'fl_config_client.json', client_abs_path / 'received_files' / 'initialized_model.pt')
+                client.initialise_fl(client_abs_path / 'received_files' / 'fl_config_client.json', client_abs_path / 'received_files' / 'global_model_round_0.pt')
             
             # Save received model weights to file
-            model_path = client_abs_path / "models" / f"round_{round_id}.pt"
-            with open(model_path, "wb") as f:
-                f.write(model_weights)
+            # model_path = client_abs_path / "models" / f"round_{round_id}.pt"
+            model_path = client_abs_path / 'received_files' / f"global_model_round_{round_id}.pt"
+            # with open(model_path, "wb") as f:
+            #     f.write(model_weights)
 
             with open(client_abs_path / 'received_files' / 'fl_config_client.json', 'r') as f:
                 config = json.load(f)
@@ -288,16 +289,18 @@ class ClientServicer(file_transfer_grpc.ClientServicer):
             trained_model_path = client_abs_path / f"models/round_{round_id}_trained.pt"
             torch.save(model.state_dict(), trained_model_path)
 
+            client.send_file_to_server(str(trained_model_path))
+
             # Send the trained model weights back to the server
-            with open(trained_model_path, "rb") as f:
-                model_weights = f.read()
+            # with open(trained_model_path, "rb") as f:
+            #     model_weights = f.read()
 
             return file_transfer_pb2.TrainingResponse(
                 err_code=0,
                 msg=f"Training completed for round {round_id}",
                 client_id = my_id,
                 round_id = round_id,
-                updated_weights=model_weights,
+                # updated_weights=model_weights,
                 samples_processed = len(dataset)
             )    
 
