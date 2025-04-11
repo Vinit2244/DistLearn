@@ -62,13 +62,24 @@ class Client:
     def start_my_server(self):
         client_server = grpc.server(futures.ThreadPoolExecutor(max_workers=10))
         file_transfer_grpc.add_ClientServicer_to_server(ClientServicer(), client_server)
-        client_certificate_path = client_folder_abs_path / f"certs/client_{self.id}.crt"
-        with open(client_certificate_path, "rb") as f:
-            cert = f.read()
-        client_key_path = client_folder_abs_path / f"certs/client_{self.id}.key"
-        with open(client_key_path, "rb") as f:
-            key = f.read()
-        client_credentials = grpc.ssl_server_credentials(((key, cert),))
+
+        certificate_chain_path = client_folder_abs_path / f"certs/client_{self.id}.crt"
+        with open(certificate_chain_path, "rb") as f:
+            certificate_chain = f.read()
+
+        private_key_path = client_folder_abs_path / f"certs/client_{self.id}.key"
+        with open(private_key_path, "rb") as f:
+            private_key = f.read()
+
+        root_certificate_path = client_folder_abs_path / "../ca.crt"
+        with open(root_certificate_path, "rb") as f:
+            root_certificate = f.read()
+        
+        client_credentials = grpc.ssl_server_credentials(
+            [(private_key, certificate_chain)],
+            root_certificates=root_certificate
+        )
+
         client_server.add_secure_port(f"{self.ip}:{self.port}", client_credentials)
         client_server.start()
         logging.info(f"Client {self.id} server started at address {self.ip}:{self.port}")

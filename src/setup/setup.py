@@ -22,7 +22,8 @@ def create_folders_and_distribute_data(n, IID, NonIID, x, data_folder=setup_fold
                                        clients_folder=setup_folder_abs_path / "../clients", 
                                        server_data_folder=setup_folder_abs_path / "../server/data", 
                                        client_script=setup_folder_abs_path / "../client/client.py",
-                                       server_certificate=setup_folder_abs_path / "../server/certs/server.crt"):
+                                       server_certificate=setup_folder_abs_path / "../server/certs/server.crt",
+                                       ca_certificate=setup_folder_abs_path / "../CA/ca.crt"):
     # Create clients and server_data folders
     clients_folder.mkdir(parents=True, exist_ok=True)
     server_data_folder.mkdir(parents=True, exist_ok=True)
@@ -43,6 +44,8 @@ def create_folders_and_distribute_data(n, IID, NonIID, x, data_folder=setup_fold
 
         shutil.copy(client_script, client_dir)
         shutil.copy(server_certificate, clients_folder)
+        shutil.copy(ca_certificate, clients_folder)
+        shutil.copy(ca_certificate, setup_folder_abs_path / "../server/certs")
 
         client_certs_folder = client_dir / "certs"
         client_certs_folder.mkdir(parents=True, exist_ok=True)

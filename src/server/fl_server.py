@@ -113,14 +113,22 @@ class FLServer:
         fl_server = grpc.server(futures.ThreadPoolExecutor(max_workers=10))
         file_transfer_grpc.add_FLServerServicer_to_server(FLServerServicer(), fl_server)
 
-        server_certificate_path = server_folder_abs_path / "certs/server.crt"
-        with open(server_certificate_path, "rb") as f:
-            cert = f.read()
-        server_key_path = server_folder_abs_path / "certs/server.key"
-        with open(server_key_path, "rb") as f:
-            key = f.read()
+        root_certificate_path = server_folder_abs_path / "certs/ca.crt"
+        with open(root_certificate_path, "rb") as f:
+            root_certificate = f.read()
 
-        server_credentials = grpc.ssl_server_credentials(((key, cert),))
+        certificate_chain_path = server_folder_abs_path / "certs/server.crt"
+        with open(certificate_chain_path, "rb") as f:
+            certificate_chain = f.read()
+        
+        private_key_path = server_folder_abs_path / "certs/server.key"
+        with open(private_key_path, "rb") as f:
+            private_key = f.read()
+
+        server_credentials = grpc.ssl_server_credentials(
+            [(private_key, certificate_chain)],
+            root_certificates=root_certificate
+        )
 
         fl_server.add_secure_port(f"{self.my_ip}:{self.my_port}", server_credentials)
         fl_server.start()
