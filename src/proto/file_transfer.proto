@@ -12,8 +12,7 @@ service FLServer {
 service Client {
     rpc TransferFile (stream FileChunk) returns (FileResponse) {}
     rpc StartTraining (TrainingRequest) returns (TrainingResponse) {}
-    rpc SendResourceInfo (google.protobuf.Empty) returns (ResourceInfo) {}
-
+    rpc GetResourceInfo (google.protobuf.Empty) returns (ResourceInfo) {}
 }
 
 message FileChunk {

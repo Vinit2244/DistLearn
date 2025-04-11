@@ -1,28 +1,29 @@
 # ============================= IMPORTS ==============================
-import argparse
-import logging
-from concurrent import futures
-import grpc
-import sys
 import os
-from pathlib import Path
-import torch
+import sys
 import json
-import warnings
+import grpc
+import torch
 import psutil
+import logging
+import argparse
+import warnings
 import speedtest
+from pathlib import Path
+from concurrent import futures
 
 # Ignore all warnings
 warnings.filterwarnings("ignore")
 
-sys.path.append(os.path.join(os.path.dirname(__file__), '..', '..','src','generated'))
+client_folder_abs_path = Path(__file__).parent.resolve()
+
+sys.path.append(str(client_folder_abs_path / "../../generated"))
 import file_transfer_pb2
 import file_transfer_pb2_grpc as file_transfer_grpc
 
-sys.path.append(os.path.join(os.path.dirname(__file__), '..', '..','src','utils'))
-from utils import clear_screen, wait_for_enter, get_server_address, get_ip, STYLES, CHUNK_SIZE
+sys.path.append(str(client_folder_abs_path / "../../utils"))
+from utils import clear_screen, wait_for_enter, get_server_address, get_ip, STYLES, CHUNK_SIZE, DIABETES_MLP_INPUT_SIZE
 
-client_abs_path = Path(__file__).parent.resolve()
 server_stub = None
 
 
@@ -35,8 +36,7 @@ class ServerSessionManager:
         self.channel = None
 
     def __enter__(self):
-        root_certificate_relative_path = "../server.crt"
-        file_path = client_abs_path / root_certificate_relative_path
+        file_path = client_folder_abs_path / "../server.crt"
         with open(file_path, "rb") as f:
             trusted_certs = f.read()
 
@@ -62,9 +62,11 @@ class Client:
     def start_my_server(self):
         client_server = grpc.server(futures.ThreadPoolExecutor(max_workers=10))
         file_transfer_grpc.add_ClientServicer_to_server(ClientServicer(), client_server)
-        with open(Path(__file__).parent / f'client_{self.id}.crt', 'rb') as f:
+        client_certificate_path = client_folder_abs_path / f"certs/client_{self.id}.crt"
+        with open(client_certificate_path, "rb") as f:
             cert = f.read()
-        with open(Path(__file__).parent / f'client_{self.id}.key', 'rb') as f:
+        client_key_path = client_folder_abs_path / f"certs/client_{self.id}.key"
+        with open(client_key_path, "rb") as f:
             key = f.read()
         client_credentials = grpc.ssl_server_credentials(((key, cert),))
         client_server.add_secure_port(f"{self.ip}:{self.port}", client_credentials)
@@ -75,7 +77,7 @@ class Client:
         if self.server is not None:
             self.server.stop(0)
         self.server = client_server
-        self.send_file_to_server(str(client_abs_path / f"client_{self.id}.crt"))
+        self.send_file_to_server(client_folder_abs_path / f"certs/client_{self.id}.crt")
 
     def register_with_server(self):
         with ServerSessionManager():
@@ -111,12 +113,12 @@ class Client:
 
     def send_file_to_server(self, file_path):
         with ServerSessionManager():
-            filename = file_path.split('/')[-1]
-            file_size = os.path.getsize(file_path)
+            filename = file_path.name
+            file_size = file_path.stat().st_size
             logging.info(f"Starting to send file: {filename} (size: {file_size} bytes)")
             
             def request_iterator():
-                with open(file_path, 'rb') as f:
+                with open(file_path, "rb") as f:
                     chunk_number = 0
                     while True:
                         chunk = f.read(CHUNK_SIZE)
@@ -138,26 +140,25 @@ class Client:
                 logging.error(f"File transfer failed: {response.msg}")
 
     def initialise_fl(self, config_path, model_path):
-        sys.path.append(os.path.join(os.path.dirname(__file__), 'received_files'))
+        sys.path.append(str(client_folder_abs_path / "received_files"))
         try:
-            # Load the configuration
-            with open(config_path, 'r') as f:
+            with open(config_path, "r") as f:
                 config = json.load(f)
             
             logging.info(f"Loaded FL config: {config}")
             
             # Extract configuration parameters
-            model_type = config.get("model_type")
-            optimizer_type = config.get("optimizer")
-            learning_rate = config.get("learning_rate")
-            num_epochs = config.get("num_epochs")
-            batch_size = config.get("batch_size")
+            model_type      = config.get("model_type")
+            optimizer_type  = config.get("optimizer")
+            learning_rate   = config.get("learning_rate")
+            num_epochs      = config.get("num_epochs")
+            batch_size      = config.get("batch_size")
             
             # Initialize the model based on model_type
             if model_type == "DiabetesMLP":
                 global DiabetesMLP, DiabetesDataset, train_diabetes_model, get_diabetes_optimizer
                 from DiabetesMLP import DiabetesMLP, DiabetesDataset, train_model as train_diabetes_model, get_optimizer as get_diabetes_optimizer
-                model = DiabetesMLP(input_size=16)
+                model = DiabetesMLP(input_size=DIABETES_MLP_INPUT_SIZE)
 
             elif model_type == "FashionMNISTCNN":
                 global FashionMNISTCNN, FashionMNISTDataset, train_fashion_mnist_model, get_fashion_mnist_optimizer
@@ -181,7 +182,7 @@ class Client:
 
             # Here you could start training immediately or wait for a separate start command
             # For now, we'll just save the initialized model for verification
-            save_path = client_abs_path / 'models'
+            save_path = client_folder_abs_path / "models"
             save_path.mkdir(exist_ok=True)
             torch.save(model.state_dict(), save_path / f"round_0.pt")
             logging.info(f"Initialized model saved to {save_path}/round_0.pt")
@@ -189,43 +190,27 @@ class Client:
         except Exception as e:
             logging.error(f"Error initializing federated learning: {str(e)}", exc_info=True)
 
-
-class ClientServicer(file_transfer_grpc.ClientServicer):
     def get_dataset_size(self):
         try:
-            # Path to the config file
-            config_path = client_abs_path / 'received_files' / 'fl_config_client.json'
-            
-            # Check if config file exists
-            if not os.path.exists(config_path):
-                logging.warning("Config file not found, cannot determine dataset size")
-                return 0
-                
-            # Load the configuration
-            with open(config_path, 'r') as f:
+            config_path = client_folder_abs_path / "received_files/fl_config_client.json"
+
+            with open(config_path, "r") as f:
                 config = json.load(f)
             
-            # Get model type from config
             model_type = config.get("model_type")
             
             # Determine dataset path based on model type
             if model_type == "DiabetesMLP":
-                dataset_path = client_abs_path / "data/diabetes_dataset.csv"
+                dataset_path = client_folder_abs_path / "data/diabetes_dataset.csv"
             elif model_type == "FashionMNISTCNN":
-                dataset_path = client_abs_path / "data/fashion_mnist_dataset.csv"
+                dataset_path = client_folder_abs_path / "data/fashion_mnist_dataset.csv"
             elif model_type == "MNISTMLP":
-                dataset_path = client_abs_path / "data/mnist_dataset.csv"
+                dataset_path = client_folder_abs_path / "data/mnist_dataset.csv"
             else:
                 logging.error(f"Unsupported model type: {model_type}")
                 return 0
             
-            # Check if dataset file exists
-            if not os.path.exists(dataset_path):
-                logging.error(f"Dataset file not found: {dataset_path}")
-                return 0
-            
-            # Calculate dataset size by reading the CSV file
-            with open(dataset_path, 'r') as f:
+            with open(dataset_path, "r") as f:
                 # Subtract 1 to exclude header row
                 dataset_size = len(f.readlines()) - 1
                 
@@ -253,6 +238,8 @@ class ClientServicer(file_transfer_grpc.ClientServicer):
         except:
             return 10.0  # Fallback if speedtest fails
         
+
+class ClientServicer(file_transfer_grpc.ClientServicer):
     def TransferFile(self, request_iterator, context):
         try:
             # Try to get the first chunk
@@ -267,15 +254,14 @@ class ClientServicer(file_transfer_grpc.ClientServicer):
                     msg="No data received from client"
                 )
             
-            received_dir = client_abs_path / 'received_files'
+            received_dir = client_folder_abs_path / "received_files"
             received_dir.mkdir(exist_ok=True)
-            # logging.info(f"Created/verified received_files directory at {received_dir}")
             
             file_path = received_dir / filename
             total_chunks = 0
             total_bytes = 0
             
-            with open(file_path, 'wb') as f:
+            with open(file_path, "wb") as f:
                 f.write(first_chunk.chunk)
                 total_chunks += 1
                 total_bytes += len(first_chunk.chunk)
@@ -290,7 +276,6 @@ class ClientServicer(file_transfer_grpc.ClientServicer):
                         break
             
             logging.info(f"File transfer completed. Total chunks: {total_chunks}, Total bytes: {total_bytes}")
-                       
             
             return file_transfer_pb2.FileResponse(
                 err_code=0,
@@ -308,28 +293,24 @@ class ClientServicer(file_transfer_grpc.ClientServicer):
         try:
             # Extract training parameters from request
             round_id = request.round_id
-            # model_weights = request.model_weights
             local_epochs = request.local_epochs
             
             logging.info(f"Starting training for round {round_id}")
 
             if round_id < 1:
-                client.initialise_fl(client_abs_path / 'received_files' / 'fl_config_client.json', client_abs_path / 'received_files' / 'global_model_round_0.pt')
+                client.initialise_fl(client_folder_abs_path / "received_files/fl_config_client.json", client_folder_abs_path / "received_files/global_model_round_0.pt")
             
             # Save received model weights to file
-            # model_path = client_abs_path / "models" / f"round_{round_id}.pt"
-            model_path = client_abs_path / 'received_files' / f"global_model_round_{round_id}.pt"
-            # with open(model_path, "wb") as f:
-            #     f.write(model_weights)
+            model_path = client_folder_abs_path / f"received_files/global_model_round_{round_id}.pt"
 
-            with open(client_abs_path / 'received_files' / 'fl_config_client.json', 'r') as f:
+            client_config_path = client_folder_abs_path / "received_files/fl_config_client.json"
+            with open(client_config_path, "r") as f:
                 config = json.load(f)
 
             # Extract configuration parameters
             model_type = config.get("model_type")
             optimizer_type = config.get("optimizer")
             learning_rate = config.get("learning_rate")
-            # num_epochs = config.get("num_epochs")
             batch_size = config.get("batch_size")
 
             # Initialize the model based on model_type
@@ -350,15 +331,15 @@ class ClientServicer(file_transfer_grpc.ClientServicer):
             if model_type == "DiabetesMLP":
                 criterion = torch.nn.BCELoss()
                 optimizer = get_diabetes_optimizer(model, optimizer_type, learning_rate)
-                dataset = DiabetesDataset(client_abs_path / "data/diabetes_dataset.csv")
+                dataset = DiabetesDataset(client_folder_abs_path / "data/diabetes_dataset.csv")
             elif model_type == "FashionMNISTCNN":
                 criterion = torch.nn.CrossEntropyLoss()
                 optimizer = get_fashion_mnist_optimizer(model, optimizer_type, learning_rate)
-                dataset = FashionMNISTDataset(client_abs_path / "data/fashion_mnist_dataset.csv")
+                dataset = FashionMNISTDataset(client_folder_abs_path / "data/fashion_mnist_dataset.csv")
             elif model_type == "MNISTMLP":
                 criterion = torch.nn.CrossEntropyLoss()
                 optimizer = get_mnist_optimizer(model, optimizer_type, learning_rate)
-                dataset = MNISTDataset(client_abs_path / "data/mnist_dataset.csv")
+                dataset = MNISTDataset(client_folder_abs_path / "data/mnist_dataset.csv")
             else:
                 raise ValueError(f"Unsupported model type: {model_type}")       
            
@@ -376,21 +357,16 @@ class ClientServicer(file_transfer_grpc.ClientServicer):
                 raise ValueError(f"Unsupported model type: {model_type}")
             
             # Save the trained model weights
-            trained_model_path = client_abs_path / f"models/round_{round_id}_trained.pt"
+            trained_model_path = client_folder_abs_path / f"models/round_{round_id}_trained.pt"
             torch.save(model.state_dict(), trained_model_path)
 
-            client.send_file_to_server(str(trained_model_path))
-
-            # Send the trained model weights back to the server
-            # with open(trained_model_path, "rb") as f:
-            #     model_weights = f.read()
+            client.send_file_to_server(trained_model_path)
 
             return file_transfer_pb2.TrainingResponse(
                 err_code=0,
                 msg=f"Training completed for round {round_id}",
                 client_id = my_id,
                 round_id = round_id,
-                # updated_weights=model_weights,
                 samples_processed = len(dataset)
             )    
 
@@ -401,11 +377,11 @@ class ClientServicer(file_transfer_grpc.ClientServicer):
                 msg=f"Error during training: {str(e)}"
             )   
 
-    def SendResourceInfo(self, request, context):
+    def GetResourceInfo(self, request, context):
         try:
-            dataset_size = self.get_dataset_size()
-            cpu_speed_factor = self.get_cpu_speed_factor()
-            network_bandwidth = self.get_network_bandwidth()
+            dataset_size = client.get_dataset_size()
+            cpu_speed_factor = client.get_cpu_speed_factor()
+            network_bandwidth = client.get_network_bandwidth()
             has_gpu = torch.cuda.is_available()
 
             logging.info(f"Sending resource info -> Dataset Size: {dataset_size}, CPU Factor: {cpu_speed_factor}, Bandwidth: {network_bandwidth} Mbps, GPU: {has_gpu}")
@@ -417,9 +393,9 @@ class ClientServicer(file_transfer_grpc.ClientServicer):
                 has_gpu=has_gpu
             )
         except Exception as e:
-            logging.error(f"Error in SendResourceInfo: {e}", exc_info=True)
+            logging.error(f"Error in GetResourceInfo: {e}", exc_info=True)
             context.set_code(grpc.StatusCode.INTERNAL)
-            context.set_details('Failed to retrieve resource info')
+            context.set_details("Failed to retrieve resource info")
             raise        
 
 
@@ -449,8 +425,8 @@ def menu():
             wait_for_enter()
 
         elif choice == "3":
-            file_path = input(f"{STYLES.FG_YELLOW}Enter the file path: {STYLES.RESET}")
-            if not Path(file_path).is_file():
+            file_path = Path(input(f"{STYLES.FG_YELLOW}Enter the file path: {STYLES.RESET}"))
+            if not file_path:
                 print(f"{STYLES.BG_RED}File not found. Please try again.{STYLES.RESET}")
                 wait_for_enter()
                 continue
@@ -470,9 +446,9 @@ def menu():
 # =============================== MAIN ===============================
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument('--port', type=int, required=True, help='Client port')
-    parser.add_argument('--id', type=int, required=True, help='Client ID')
-    parser.add_argument('--mode', type=str, default='i', help='Mode: i for interactive, a for automatic') 
+    parser.add_argument("--port", type=int, required=True, help="Client port")
+    parser.add_argument("--id", type=int, required=True, help="Client ID")
+    parser.add_argument("--mode", type=str, default="i", help="Mode: i for interactive, a for automatic") 
 
     args = parser.parse_args()
     mode = args.mode
@@ -486,11 +462,12 @@ if __name__ == "__main__":
     global client
     client = Client(my_id, my_ip, my_port)
 
-    os.makedirs(client_abs_path / "logs", exist_ok=True)
+    logs_dir = client_folder_abs_path / "logs"
+    logs_dir.mkdir(parents=True, exist_ok=True)
 
     # Logging configuration
     logging.basicConfig(
-        filename=client_abs_path / "logs" / f"client_{my_id}.log",
+        filename=client_folder_abs_path / "logs" / f"client_{my_id}.log",
         level=logging.INFO,
         format="%(asctime)s - %(levelname)s - %(message)s"
     )
@@ -498,10 +475,9 @@ if __name__ == "__main__":
     logging.info(f"Client {my_id} started with IP {my_ip} and port {my_port}")
     logging.info(f"Pid: {os.getpid()}")
 
-    # 'a' mode for testing using multiple clients
-    if mode.lower() == 'i':     # Interactive mode
+    if mode.lower() == "i":     # Interactive mode
         menu()
-    elif mode.lower() == 'a':   # Automatic mode
+    elif mode.lower() == "a":   # Automatic mode
         client.start_my_server()
         client.register_with_server()
         while True:

@@ -25,20 +25,20 @@ consul:
 start_server:
 	python3 server/fl_server.py --port=$(SERVER_PORT)
 
-setup:
-	python3 ../setup.py --num_clients=$$(($(IID) + $(NonIID))) --IID=$(IID) --NonIID=$(NonIID) --x=$(x)
+do_setup:
+	python3 setup/setup.py --num_clients=$$(($(IID) + $(NonIID))) --IID=$(IID) --NonIID=$(NonIID) --x=$(x)
 
-setup_and_visualise:
-	python3 ../setup.py --num_clients=$$(($(IID) + $(NonIID))) --visualize_initial --visualize_distributed --IID=$(IID) --NonIID=$(NonIID) --x=$(x)
+do_setup_and_visualise:
+	python3 setup/setup.py --num_clients=$$(($(IID) + $(NonIID))) --visualize_initial --visualize_distributed --IID=$(IID) --NonIID=$(NonIID) --x=$(x)
 
 start_clients:
 	@for i in $(shell seq 1 $$(($(IID) + $(NonIID)))); do \
 		port=$$(($(SERVER_PORT) + $$i)); \
-		openssl genrsa -out ../clients/$$i/client_$$i.key 2048; \
-		openssl req -new -key ../clients/$$i/client_$$i.key -out ../clients/$$i/client_$$i.csr -config ../clients/$$i/client_$$i.cnf; \
-		openssl x509 -req -in ../clients/$$i/client_$$i.csr -CA ../CA/ca.crt -CAkey ../CA/ca.key -CAcreateserial -out ../clients/$$i/client_$$i.crt -days 365 -sha256 -extfile ../clients/$$i/client_$$i.cnf -extensions req_ext; \
-		rm -f ../clients/$$i/client_$$i.csr; \
-		python3 ../clients/$$i/client.py --port $$port --id $$i --mode a & \
+		openssl genrsa -out clients/$$i/certs/client_$$i.key 2048; \
+		openssl req -new -key clients/$$i/certs/client_$$i.key -out clients/$$i/certs/client_$$i.csr -config clients/$$i/certs/client_$$i.cnf; \
+		openssl x509 -req -in clients/$$i/certs/client_$$i.csr -CA CA/ca.crt -CAkey CA/ca.key -CAcreateserial -out clients/$$i/certs/client_$$i.crt -days 365 -sha256 -extfile clients/$$i/certs/client_$$i.cnf -extensions req_ext; \
+		rm -f clients/$$i/certs/client_$$i.csr; \
+		python3 clients/$$i/client.py --port $$port --id $$i --mode a & \
 		echo $$! >> $(PID_FILE); \
 	done
 
@@ -53,13 +53,14 @@ kill_clients:
 	fi
 
 clean:
-	rm -rf $(OUT_DIR)/*_pb2.py*
-	rm -rf $(OUT_DIR)/*_pb2_grpc.py*
-	find . -name "__pycache__" -type d -exec rm -rf {} +
-	rm -rf ./server/logs/*.log
-	rm -rf ../clients
-	rm -rf ./server/logs
-	rm -rf ./server/models
-	rm ./server/fl_config_client.json
-	rm ./server/fl_config_server.json
-	rm ./server/fl_server.json
+	- rm -rf $(OUT_DIR)/*_pb2.py*
+	- rm -rf $(OUT_DIR)/*_pb2_grpc.py*
+	- find . -name "__pycache__" -type d -exec rm -rf {} +
+	- rm -rf clients
+	- rm -rf server/logs
+	- rm -rf server/models
+	- rm -f server/fl_config_client.json
+	- rm -f server/fl_config_server.json
+	- rm -f server/fl_server.json
+	- rm -rf server/data
+	- rm -rf server/received_files

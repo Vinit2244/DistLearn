@@ -4,6 +4,7 @@ import requests
 
 CONSUL_URL_SERVER = "http://localhost:8500/v1/catalog/service/fl-server"
 CHUNK_SIZE = 1024  # 1KB chunks
+DIABETES_MLP_INPUT_SIZE = 16
 
 class Styles:
     def __init__(self):

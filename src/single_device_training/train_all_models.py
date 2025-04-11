@@ -42,4 +42,4 @@ if __name__ == "__main__":
     train_diabetes()
     train_fashion_mnist()
     
-    print("\nTraining completed for all models!") 
+    print("\nTraining completed for all models!")

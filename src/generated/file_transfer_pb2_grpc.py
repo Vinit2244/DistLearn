@@ -203,8 +203,8 @@ class ClientStub(object):
                 request_serializer=file__transfer__pb2.TrainingRequest.SerializeToString,
                 response_deserializer=file__transfer__pb2.TrainingResponse.FromString,
                 _registered_method=True)
-        self.SendResourceInfo = channel.unary_unary(
-                '/file_transfer.Client/SendResourceInfo',
+        self.GetResourceInfo = channel.unary_unary(
+                '/file_transfer.Client/GetResourceInfo',
                 request_serializer=google_dot_protobuf_dot_empty__pb2.Empty.SerializeToString,
                 response_deserializer=file__transfer__pb2.ResourceInfo.FromString,
                 _registered_method=True)
@@ -225,7 +225,7 @@ class ClientServicer(object):
         context.set_details('Method not implemented!')
         raise NotImplementedError('Method not implemented!')
 
-    def SendResourceInfo(self, request, context):
+    def GetResourceInfo(self, request, context):
         """Missing associated documentation comment in .proto file."""
         context.set_code(grpc.StatusCode.UNIMPLEMENTED)
         context.set_details('Method not implemented!')
@@ -244,8 +244,8 @@ def add_ClientServicer_to_server(servicer, server):
                     request_deserializer=file__transfer__pb2.TrainingRequest.FromString,
                     response_serializer=file__transfer__pb2.TrainingResponse.SerializeToString,
             ),
-            'SendResourceInfo': grpc.unary_unary_rpc_method_handler(
-                    servicer.SendResourceInfo,
+            'GetResourceInfo': grpc.unary_unary_rpc_method_handler(
+                    servicer.GetResourceInfo,
                     request_deserializer=google_dot_protobuf_dot_empty__pb2.Empty.FromString,
                     response_serializer=file__transfer__pb2.ResourceInfo.SerializeToString,
             ),
@@ -315,7 +315,7 @@ class Client(object):
             _registered_method=True)
 
     @staticmethod
-    def SendResourceInfo(request,
+    def GetResourceInfo(request,
             target,
             options=(),
             channel_credentials=None,
@@ -328,7 +328,7 @@ class Client(object):
         return grpc.experimental.unary_unary(
             request,
             target,
-            '/file_transfer.Client/SendResourceInfo',
+            '/file_transfer.Client/GetResourceInfo',
             google_dot_protobuf_dot_empty__pb2.Empty.SerializeToString,
             file__transfer__pb2.ResourceInfo.FromString,
             options,

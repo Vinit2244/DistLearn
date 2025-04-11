@@ -14,22 +14,24 @@ from pathlib import Path
 import concurrent.futures
 from concurrent import futures
 import matplotlib.pyplot as plt
-from google.protobuf import empty_pb2  # <-- This is the fix
+from google.protobuf import empty_pb2
 
-sys.path.append(os.path.join(os.path.dirname(__file__), '..', 'generated'))
+server_folder_abs_path = Path(__file__).parent.resolve()
+
+sys.path.append(str(server_folder_abs_path / "../generated"))
 import file_transfer_pb2
 import file_transfer_pb2_grpc as file_transfer_grpc
 
-sys.path.append("utils")
+sys.path.append(str(server_folder_abs_path / "../utils"))
 from utils import clear_screen, wait_for_enter, get_ip, STYLES, CHUNK_SIZE
 
 # Importing models to be trained
-sys.path.append("../models")
+sys.path.append(str(server_folder_abs_path / "../models"))
 from DiabetesMLP import DiabetesMLP, evaluate_model as evaluate_diabetes_model
 from FashionMNISTCNN import FashionMNISTCNN, evaluate_model as evaluate_fashion_mnist_model
 from MNISTMLP import MNISTMLP, evaluate_model as evaluate_mnist_model
 
-sns.set(style='whitegrid', context='talk')
+sns.set(style="whitegrid", context="talk")
 
 os.environ["GRPC_VERBOSITY"] = "ERROR"
 os.environ["GRPC_TRACE"] = ""
@@ -53,7 +55,7 @@ class ClientSessionManager:
         self.channel = None
 
     def __enter__(self):
-        client_root_certificate_relative_path = f'./server/received_files/{self.client_id}/client_{self.client_id}.crt'
+        client_root_certificate_relative_path = server_folder_abs_path / f"received_files/{self.client_id}/client_{self.client_id}.crt"
         with open(client_root_certificate_relative_path, "rb") as f:
             trusted_certs = f.read()
 
@@ -91,14 +93,15 @@ class FLServer:
         }
 
         # Creating a consul service definition file
-        with open("./server/fl_server.json", "w") as json_file:
+        server_json_path = server_folder_abs_path / "fl_server.json"
+        with open(server_json_path, "w") as json_file:
             json.dump(data, json_file)
         logging.info("FL service definition file created")
 
         # Registering the service with consul
-        command = ["consul", "services", "register", "./server/fl_server.json"]
+        command = ["consul", "services", "register", str(server_folder_abs_path / "fl_server.json")]
         try:
-            result = subprocess.run(command, check=True)
+            subprocess.run(command, check=True)
             logging.info("FL service registered with consul")
         except subprocess.CalledProcessError as e:
             logging.error(f"Error registering service: {e}")
@@ -106,13 +109,15 @@ class FLServer:
             sys.exit(1)
 
     def start_server(self):
-    # Starting FL server
+        # Starting FL server
         fl_server = grpc.server(futures.ThreadPoolExecutor(max_workers=10))
         file_transfer_grpc.add_FLServerServicer_to_server(FLServerServicer(), fl_server)
 
-        with open(Path(__file__).parent / 'server.crt', 'rb') as f:
+        server_certificate_path = server_folder_abs_path / "certs/server.crt"
+        with open(server_certificate_path, "rb") as f:
             cert = f.read()
-        with open(Path(__file__).parent / 'server.key', 'rb') as f:
+        server_key_path = server_folder_abs_path / "certs/server.key"
+        with open(server_key_path, "rb") as f:
             key = f.read()
 
         server_credentials = grpc.ssl_server_credentials(((key, cert),))
@@ -120,8 +125,6 @@ class FLServer:
         fl_server.add_secure_port(f"{self.my_ip}:{self.my_port}", server_credentials)
         fl_server.start()
         logging.info(f"FL server started at address {self.my_ip}:{self.my_port}")
-        clear_screen()
-        print(f"FL server started at address {self.my_ip}:{self.my_port}")
         self.server_instance = fl_server
 
     def terminate_server(self):
@@ -131,21 +134,19 @@ class FLServer:
         self.server_instance.stop(0)
         self.server_instance = None
         logging.info("FL server terminated")
-        clear_screen()
-        print("FL server terminated")
 
     def send_file_to_client(self, file_path, client_id):
         if client_id not in self.clients.keys():
             print(f"{STYLES.BG_RED}Client not registered. Please try again.{STYLES.RESET}")
-            return
+            return 1
         client_ip, client_port = self.clients[client_id]
         with ClientSessionManager(client_id, client_ip, client_port) as stub:
-            filename = file_path.split('/')[-1]
-            file_size = os.path.getsize(file_path)
+            filename = file_path.name
+            file_size = file_path.stat().st_size
             logging.info(f"Starting to send file: {filename} (size: {file_size} bytes)")
             
             def request_iterator():
-                with open(file_path, 'rb') as f:
+                with open(file_path, "rb") as f:
                     chunk_number = 0
                     while True:
                         chunk = f.read(CHUNK_SIZE)
@@ -167,39 +168,39 @@ class FLServer:
             else:
                 logging.error(f"File transfer failed: {response.msg}")
                 print(f"{STYLES.BG_RED + STYLES.FG_WHITE}Error: {response.msg}{STYLES.RESET}")
+                return 1
 
     def initialize_fl(self, training_algo, num_epochs, learning_rate, optimizer, batch_size, model_type, client_fraction):
         fl_config_server = {
-            "training_algo": training_algo,
-            "num_epochs": num_epochs,
-            "learning_rate": learning_rate,
-            "optimizer": optimizer,
-            "batch_size": batch_size,
-            "model_type": model_type,
-            "client_fraction": client_fraction
+            "training_algo":    training_algo,
+            "num_epochs":       num_epochs,
+            "learning_rate":    learning_rate,
+            "optimizer":        optimizer,
+            "batch_size":       batch_size,
+            "model_type":       model_type,
+            "client_fraction":  client_fraction
         }
 
         fl_config_client = {
-            "num_epochs": num_epochs,
-            "learning_rate": learning_rate,
-            "optimizer": optimizer,
-            "batch_size": batch_size,
-            "model_type": model_type
+            "num_epochs":       num_epochs,
+            "learning_rate":    learning_rate,
+            "optimizer":        optimizer,
+            "batch_size":       batch_size,
+            "model_type":       model_type
         }
 
-        config_path = "./server/fl_config_server.json"
+        config_path = server_folder_abs_path / "fl_config_server.json"
         with open(config_path, "w") as f:
             json.dump(fl_config_server, f)
 
         logging.info(f"FL Configuration (Server) saved at {config_path}")
 
-        config_path = "./server/fl_config_client.json"
+        config_path = server_folder_abs_path / "fl_config_client.json"
         with open(config_path, "w") as f:
             json.dump(fl_config_client, f)
         
         logging.info(f"FL Configuration (Client) saved at {config_path}")
 
-        # Step 2: Initialize model based on model_type
         model = None
         if model_type == model_types[0]:
             model = DiabetesMLP(input_size=16)
@@ -211,39 +212,39 @@ class FLServer:
             logging.error(f"Invalid model type: {model_type}")
             return
 
-        os.makedirs("./server/models", exist_ok=True)
+        server_models_dir = server_folder_abs_path / "models"
+        server_models_dir.mkdir(parents=True, exist_ok=True)
         
-        model_path = "./server/models/global_model_round_0.pt"
+        model_path = server_models_dir / "global_model_round_0.pt"
         torch.save(model.state_dict(), model_path)
         logging.info(f"Initialized model saved at {model_path}")
 
-        # Step 3: Select clients randomly based on client_fraction
+        # Selecting random clients based on client fraction
         num_clients = len(self.clients)
         num_selected = max(1, int(client_fraction * num_clients))
         selected_clients = random.sample(list(self.clients.keys()), num_selected)
         
         print(f"{STYLES.FG_CYAN}Selected {num_selected}/{num_clients} clients for training.{STYLES.RESET}")
+        print(f"{STYLES.FG_CYAN}Client IDs: {selected_clients}{STYLES.RESET}")
         logging.info(f"Selected {num_selected}/{num_clients} clients for training: {selected_clients}")
 
-        # Step 4: Send config and model to each selected client
+        # Send config and model to each client
         for client_id in selected_clients:
             logging.info(f"Sending configuration and model to client {client_id}")
             self.send_file_to_client(config_path, client_id)
             self.send_file_to_client(model_path, client_id)
-        
-        return selected_clients
 
     def start_federated_training(self, num_rounds):
         try:
-            # Load FL configuration
-            with open("./server/fl_config_server.json", "r") as f:
+            server_config_path = server_folder_abs_path / "fl_config_server.json"
+            with open(server_config_path, "r") as f:
                 fl_config = json.load(f)
  
-            training_algo = fl_config["training_algo"]
-            model_type = fl_config["model_type"]
+            training_algo   = fl_config["training_algo"]
+            model_type      = fl_config["model_type"]
             client_fraction = fl_config["client_fraction"]
-            lr = fl_config["learning_rate"]
-            optimizer = fl_config["optimizer"]
+            lr              = fl_config["learning_rate"]
+            optimizer       = fl_config["optimizer"]
 
             # Initialize the appropriate model
             if model_type == model_types[0]:
@@ -257,8 +258,8 @@ class FLServer:
                 return
 
             # Load initial weights
-            initial_weights_path = "./server/models/global_model_round_0.pt"
-            model.load_state_dict(torch.load(initial_weights_path))
+            initial_weights_path = server_folder_abs_path / "models/global_model_round_0.pt"
+            torch.load(initial_weights_path)
 
             if model_type == model_types[2]:
                 smoothed_theta_arr = np.zeros(len(self.clients))
@@ -266,44 +267,22 @@ class FLServer:
             for round_id in range(num_rounds):
                 print(f"\n{STYLES.FG_CYAN}=== Starting Round {round_id + 1}/{num_rounds} ==={STYLES.RESET}")
 
-                # If round is 0 and training algo is FedModCS ask for resource info
-                # Step 3: If FedModCS, request resource info from all clients
-                if training_algo == training_algos[3]:
-                    client_resource_info = {}
-                    if training_algo == training_algos[3]:
-                        logging.info("Training algorithm is FedModCS: Requesting resource info from all clients.")
-                        for client_id in self.clients:
-                            try:
-                                client_ip, client_port = self.clients[client_id]
-                                with ClientSessionManager(client_id, client_ip, client_port) as stub:
-                                    response = stub.SendResourceInfo(empty_pb2.Empty())
-                                    info = {
-                                        "dataset_size": response.dataset_size,
-                                        "cpu_speed_factor": response.cpu_speed_factor,
-                                        "network_bandwidth": response.network_bandwidth,
-                                        "has_gpu": response.has_gpu
-                                    }
-                                    client_resource_info[client_id] = info
-                                    logging.info(f"Client {client_id} resource info: {info}")
-                            except Exception as e:
-                                logging.error(f"Failed to get resource info from client {client_id}: {e}")
-
                 # Function to send training requests to clients
                 def train_client(client_id):
                     try:
                         client_ip, client_port = self.clients[client_id]
+                        
+                        # Send current global model
                         with ClientSessionManager(client_id, client_ip, client_port) as stub:
-                            # Send current global model
-                            model_weights_path = f"./server/models/global_model_round_{round_id}.pt"
+                            model_weights_path = server_folder_abs_path / f"models/global_model_round_{round_id}.pt"
                             self.send_file_to_client(model_weights_path, client_id)
                             logging.info(f"Sent model weights to client {client_id}")                     
 
                             response = stub.StartTraining(file_transfer_pb2.TrainingRequest(
                                 round_id=round_id,
                                 model_version="1.0",
-                                # model_weights=model_weights,
                                 local_epochs=fl_config["num_epochs"],
-                                model_path = model_weights_path.split('/')[-1]
+                                model_path = str(model_weights_path.name)
                             ))
 
                             return client_id, response
@@ -317,20 +296,8 @@ class FLServer:
                 num_selected = max(1, int(client_fraction * num_clients))
                 selected_clients = random.sample(list(self.clients.keys()), num_selected)
 
-                file_size_bytes = os.path.getsize(initial_weights_path)
+                file_size_bytes = initial_weights_path.stat().st_size
                 file_size_mb = file_size_bytes / (1024 * 1024)   
-
-                if training_algo == training_algos[3]:  # FedModCS
-                    selected_clients = self.select_clients_fedmodcs(client_resource_info, round_id, selected_clients, file_size_mb)
-                    num_selected = len(selected_clients)
-                
-                    if num_selected == 0:
-                        print(f"{STYLES.BG_RED}No clients selected for this round according to FedMODCS. Going for random selection...{STYLES.RESET}")
-                        num_clients = len(self.clients)
-                        num_selected = max(1, int(client_fraction * num_clients))
-                        selected_clients = random.sample(list(self.clients.keys()), num_selected)                        
-                
-                # print(f"Selected clients for this round: {selected_clients}")
 
                 client_responses = []
                 total_samples = 0
@@ -356,24 +323,15 @@ class FLServer:
                 weights_of_all_clients = []
                 num_samples_arr = []
 
-                ####### CHANGE THIS CODE TO GET THE FILE STREAMED FROM SERVER AS MAX SIZE OF MESSAGE IN GRPC IS 4MB ONLY #######    
-                # Write the updated weights to the file
-                # for response in client_responses:
-                #     client_model_path = f"./server/models/client_{response.client_id}_round_{round_id}.pt"
-                    # with open(client_model_path, "wb") as f:
-                    #     f.write(response.updated_weights)
-                    
+                # FedAdp
                 if training_algo == training_algos[2]:
                     for response in client_responses:
-                        # client_model_path = f"./server/models/client_{response.client_id}_round_{round_id}.pt"
-                        client_model_path = f"./server/received_files/{response.client_id}/round_{round_id}_trained.pt"
-                        client_state_dict = torch.load(client_model_path, map_location='cpu')
+                        client_model_path = server_folder_abs_path / f"received_files/{response.client_id}/round_{round_id}_trained.pt"
+                        client_state_dict = torch.load(client_model_path, map_location="cpu")
                         client_weights = np.astype(torch.cat([v.flatten() for v in client_state_dict.values()]).numpy(), np.float32)
                         weights_of_all_clients.append(client_weights)
                         num_samples_arr.append(response.samples_processed)
-
-                # FedAdp
-                if training_algo == training_algos[2]:
+                    
                     weights_of_all_clients = np.array(weights_of_all_clients)
                     num_samples_arr = np.array(num_samples_arr)
 
@@ -385,8 +343,7 @@ class FLServer:
                     psi_arr = self.get_psi_arr(smoothed_theta_arr, num_samples_arr)
 
                     for idx, response in enumerate(client_responses):
-                        # client_model_path = f"./server/models/client_{response.client_id}_round_{round_id}.pt"
-                        client_model_path = f"./server/received_files/{response.client_id}/round_{round_id}_trained.pt"
+                        client_model_path = server_folder_abs_path / f"received_files/{response.client_id}/round_{round_id}_trained.pt"
                         client_model = model
                         client_model.load_state_dict(torch.load(client_model_path))
                         
@@ -395,13 +352,42 @@ class FLServer:
                                 avg_weights[name] = param * psi_arr[idx]
                             else:
                                 avg_weights[name] += param * psi_arr[idx]               
+                
+                # FedModCS
+                elif training_algo == training_algos[3]:
+                    # If FedModCS, request resource info from all clients
+                    client_resource_info = {}
+                    logging.info("Training algorithm is FedModCS: Requesting resource info from all clients.")
+                    for client_id in self.clients:
+                        try:
+                            client_ip, client_port = self.clients[client_id]
+                            with ClientSessionManager(client_id, client_ip, client_port) as stub:
+                                response = stub.GetResourceInfo(empty_pb2.Empty())
+                                info = {
+                                    "dataset_size": response.dataset_size,
+                                    "cpu_speed_factor": response.cpu_speed_factor,
+                                    "network_bandwidth": response.network_bandwidth,
+                                    "has_gpu": response.has_gpu
+                                }
+                                client_resource_info[client_id] = info
+                                logging.info(f"Client {client_id} resource info: {info}")
+                        except Exception as e:
+                            logging.error(f"Failed to get resource info from client {client_id}: {e}")
+                            
+                    selected_clients = self.select_clients_fedmodcs(client_resource_info, round_id, selected_clients, file_size_mb)
+                    num_selected = len(selected_clients)
+                
+                    if num_selected == 0:
+                        print(f"{STYLES.BG_RED}No clients selected for this round according to FedMODCS. Going for random selection...{STYLES.RESET}")
+                        num_clients = len(self.clients)
+                        num_selected = max(1, int(client_fraction * num_clients))
+                        selected_clients = random.sample(list(self.clients.keys()), num_selected)                        
 
                 # FedSGD and FedAvg
                 else:
                     # Aggregate client updates (Federated Averaging)
                     for response in client_responses:
-                        # client_model_path = f"./server/models/client_{response.client_id}_round_{round_id}.pt"
-                        client_model_path = f"./server/received_files/{response.client_id}/round_{round_id}_trained.pt"
+                        client_model_path = server_folder_abs_path / f"received_files/{response.client_id}/round_{round_id}_trained.pt"
 
                         # Load weights into model
                         client_model = model
@@ -421,21 +407,25 @@ class FLServer:
                 model.load_state_dict(avg_weights)
 
                 # Save new global model
-                global_model_path = f"./server/models/global_model_round_{round_id+1}.pt"
+                global_model_path = server_folder_abs_path / f"models/global_model_round_{round_id+1}.pt"
                 torch.save(model.state_dict(), global_model_path)
 
                 # Evaluate new model
                 if model_type == model_types[0]:
-                    path_to_server_test_data = "../server_data/diabetes_dataset.csv"
+                    path_to_server_test_data = server_folder_abs_path / "data/diabetes_dataset.csv"
                     loss, acc = evaluate_diabetes_model(global_model_path, path_to_server_test_data)
 
                 elif model_type == model_types[1]:
-                    path_to_server_test_data = "../server_data/fashion_mnist_dataset.csv"
+                    path_to_server_test_data = server_folder_abs_path / "data/fashion_mnist_dataset.csv"
                     loss, acc = evaluate_fashion_mnist_model(global_model_path, path_to_server_test_data)
 
                 elif model_type == model_types[2]:
-                    path_to_server_test_data = "../server_data/mnist_dataset.csv"
+                    path_to_server_test_data = server_folder_abs_path / "data/mnist_dataset.csv"
                     loss, acc = evaluate_mnist_model(global_model_path, path_to_server_test_data)
+
+                else:
+                    print(f"{STYLES.BG_RED}Invalid model type in config{STYLES.RESET}")
+                    return
 
                 print(f"Loss: {round(loss, 4)}")
                 print(f"Accuracy: {round(acc, 4)}%")
@@ -475,9 +465,9 @@ class FLServer:
         return Nr / Dr
 
     def get_theta_arr(self, weights_arr, num_samples_arr, curr_round_id, initial_weights_path, lr):
-        model_weights_path = f"./server/models/global_model_round_{curr_round_id - 1}.pt" if curr_round_id > 0 else initial_weights_path
+        model_weights_path = server_folder_abs_path / f"models/global_model_round_{curr_round_id - 1}.pt" if curr_round_id > 0 else initial_weights_path
 
-        global_state_dict = torch.load(model_weights_path, map_location='cpu')
+        global_state_dict = torch.load(model_weights_path, map_location="cpu")
         global_w_prev = np.astype(torch.cat([v.flatten() for v in global_state_dict.values()]).numpy(), np.float32)
 
         gradients_arr = - 1 * (weights_arr - global_w_prev) / lr
@@ -537,7 +527,7 @@ class FLServer:
         # Client selection process
         while len(K_prime_remaining) > 0:            
             # Find client with maximum value according to the formula
-            max_value = -float('inf')
+            max_value = -float("inf")
             max_client = None
             
             for k in K_prime_remaining:
@@ -620,17 +610,14 @@ class FLServerServicer(file_transfer_grpc.FLServerServicer):
                 )
             
             # Creating a separate directory for each client to store received files
-            received_dir = Path(__file__).parent / 'received_files'
-            received_dir.mkdir(exist_ok=True)
-            received_dir = Path(__file__).parent / 'received_files' / str(client_id)
-            received_dir.mkdir(exist_ok=True)
-            # logging.info(f"Created/verified received_files directory at {received_dir}")
+            received_dir = server_folder_abs_path / "received_files" / str(client_id)
+            received_dir.mkdir(parents=True, exist_ok=True)
             
             file_path = received_dir / filename
             total_chunks = 0
             total_bytes = 0
             
-            with open(file_path, 'wb') as f:
+            with open(file_path, "wb") as f:
                 f.write(first_chunk.chunk)
                 total_chunks += 1
                 total_bytes += len(first_chunk.chunk)
@@ -666,15 +653,15 @@ def menu():
         print()
         print(f"{STYLES.FG_YELLOW}Choose an option: {STYLES.RESET}")
         print("  1. Transfer File")
-        print("  2. Exit")
-        print("  3. Initialize Federated Learning")
-        print("  4. Start Federated Training")
+        print("  2. Initialize Federated Learning")
+        print("  3. Start Federated Training")
+        print("  4. Exit")
         print()
         choice = input(f"{STYLES.FG_YELLOW}Enter your choice: {STYLES.RESET}")
         
         if choice == "1":
-            file_path = input(f"{STYLES.FG_YELLOW}Enter the file path: {STYLES.RESET}")
-            if not Path(file_path).is_file():
+            file_path = Path(input(f"{STYLES.FG_YELLOW}Enter the file path: {STYLES.RESET}"))
+            if not file_path.is_file():
                 print(f"{STYLES.BG_RED}File not found. Please try again.{STYLES.RESET}")
             client_id = input(f"{STYLES.FG_YELLOW}Enter the client ID: {STYLES.RESET}").strip()
             try:
@@ -685,7 +672,8 @@ def menu():
                         wait_for_enter()
                         continue
                     for client_id in all_client_ids:
-                        fl_server.send_file_to_client(file_path, client_id)
+                        if fl_server.send_file_to_client(file_path, client_id) == 1:
+                            print(f"{STYLES.FG_GREEN}File sent to client ID: {client_id}{STYLES.RESET}")
                 else:
                     client_id = int(client_id)
                     fl_server.send_file_to_client(file_path, client_id)
@@ -694,11 +682,8 @@ def menu():
                 wait_for_enter()
                 continue
             wait_for_enter()
-        
+                
         elif choice == "2":
-            break
-        
-        elif choice == "3":
             # Select Algorithm
             print(f"{STYLES.FG_YELLOW}Enter the training algorithm: {STYLES.RESET}")
             for i, algo in enumerate(training_algos, 1):
@@ -759,18 +744,17 @@ def menu():
                 continue
             
             try:
-                selected_clients = fl_server.initialize_fl(training_algos[training_algo - 1], num_epochs, learning_rate, optimizers[optimizer - 1], 
+                fl_server.initialize_fl(training_algos[training_algo - 1], num_epochs, learning_rate, optimizers[optimizer - 1], 
                                                            batch_size, model_types[model_type - 1], client_fraction)
                 print(f"{STYLES.FG_GREEN}Federated learning initialized successfully!{STYLES.RESET}")
-                print(f"{STYLES.FG_CYAN}Selected {len(selected_clients)}/{len(fl_server.clients)} clients for training.{STYLES.RESET}")
-                print(f"{STYLES.FG_CYAN}Client IDs: {', '.join(map(str, selected_clients))}{STYLES.RESET}")
             except Exception as e:
                 print(f"{STYLES.BG_RED}Error initializing federated learning: {str(e)}{STYLES.RESET}")
             
             wait_for_enter()
 
-        elif choice == "4":
-            if not Path("./server/fl_config_server.json").exists():
+        elif choice == "3":
+            config_server_file_path = server_folder_abs_path / "fl_config_server.json"
+            if not config_server_file_path.exists():
                 print(f"{STYLES.BG_RED}FL not initialized. Please initialize first.{STYLES.RESET}")
                 wait_for_enter()
                 continue
@@ -790,24 +774,29 @@ def menu():
             fl_server.start_federated_training(num_rounds)
             wait_for_enter()          
         
+        elif choice == "4":
+            break
+
         else:
             print(f"{STYLES.BG_RED}Invalid choice. Please try again.{STYLES.RESET}")
             wait_for_enter()
 
 
 def make_plots(num_clients, model_name):
-    with open("./server/fl_config_server.json", "r") as f:
+    server_config_path = server_folder_abs_path / "fl_config_server.json"
+    with open(server_config_path, "r") as f:
         fl_config = json.load(f)
     
-    training_algo = fl_config["training_algo"]
-    num_epochs = fl_config["num_epochs"]
-    learning_rate = fl_config["learning_rate"]
-    optimizer = fl_config["optimizer"]
-    batch_size = fl_config["batch_size"]
-    model_type = fl_config["model_type"]
+    training_algo   = fl_config["training_algo"]
+    num_epochs      = fl_config["num_epochs"]
+    learning_rate   = fl_config["learning_rate"]
+    optimizer       = fl_config["optimizer"]
+    batch_size      = fl_config["batch_size"]
+    model_type      = fl_config["model_type"]
     client_fraction = fl_config["client_fraction"]
     
-    os.makedirs("./server/metric_plots", exist_ok=True)
+    metric_plots_dir = server_folder_abs_path / "metric_plots"
+    metric_plots_dir.mkdir(parents=True, exist_ok=True)
 
     loss_list = losses[model_name]
     accuracy_list = accuracies[model_name]
@@ -815,7 +804,7 @@ def make_plots(num_clients, model_name):
     fig, axes = plt.subplots(1, 2, figsize=(14, 6))
 
     # Plot Loss
-    sns.lineplot(ax=axes[0], x=range(len(loss_list)), y=loss_list, label='Loss', color='steelblue')
+    sns.lineplot(ax=axes[0], x=range(len(loss_list)), y=loss_list, label="Loss", color="steelblue")
     axes[0].set_title(f"Loss Curve")
     axes[0].set_xlabel("Round")
     axes[0].set_ylabel("Loss")
@@ -823,7 +812,7 @@ def make_plots(num_clients, model_name):
     axes[0].grid(True)
 
     # Plot Accuracy
-    sns.lineplot(ax=axes[1], x=range(len(accuracy_list)), y=accuracy_list, label='Accuracy', color='darkorange')
+    sns.lineplot(ax=axes[1], x=range(len(accuracy_list)), y=accuracy_list, label="Accuracy", color="darkorange")
     axes[1].set_title(f"Accuracy Curve")
     axes[1].set_xlabel("Round")
     axes[1].set_ylabel("Accuracy (%)")
@@ -835,7 +824,7 @@ def make_plots(num_clients, model_name):
                     Epochs (Client): {num_epochs} | Learning Rate = {learning_rate} | Optimizer = {optimizer}\n \
                     Batch Size = {batch_size} | Client Frac = {client_fraction} | # Clients: {num_clients}", fontsize=16)
     plt.tight_layout()
-    plt.savefig(f"./server/metric_plots/{model_type}_{training_algo}_{num_clients}_metrics.png", dpi=300)
+    plt.savefig(metric_plots_dir / f"{model_type}_{training_algo}_{num_clients}_metrics.png", dpi=300)
     plt.close(fig)
 
     fig, axes = plt.subplots(1, 2, figsize=(14, 6))
@@ -861,23 +850,24 @@ def make_plots(num_clients, model_name):
         axes[1].grid(True)
 
     plt.suptitle(f"Loss & Accuracy Curves for Different Models")
-    plt.savefig(f"./server/metric_plots/loss_curve_all_models.png", dpi=300)
+    plt.savefig(metric_plots_dir / f"loss_curve_all_models.png", dpi=300)
     plt.close(fig)
 
 
 # ============================= MAIN =============================
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description='Federated Learning Server')
+    parser = argparse.ArgumentParser(description="Federated Learning Server")
     parser.add_argument("--port", type=int, default=50051, help="Port Number for FL Server")
     args = parser.parse_args()
 
     my_port = args.port
     my_ip = get_ip()
 
-    os.makedirs("./server/logs", exist_ok=True)
+    server_logs_dir = server_folder_abs_path / "logs"
+    server_logs_dir.mkdir(parents=True, exist_ok=True)
 
     logging.basicConfig(
-        filename=f"./server/logs/fl_server.log",
+        filename=server_logs_dir / "fl_server.log",
         level=logging.INFO,
         format="%(asctime)s - %(levelname)s - %(message)s"
     )
