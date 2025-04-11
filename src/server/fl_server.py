@@ -14,6 +14,7 @@ from pathlib import Path
 import concurrent.futures
 from concurrent import futures
 import matplotlib.pyplot as plt
+from google.protobuf import empty_pb2  # <-- This is the fix
 
 sys.path.append(os.path.join(os.path.dirname(__file__), '..', 'generated'))
 import file_transfer_pb2
@@ -235,14 +236,28 @@ class FLServer:
             for round_id in range(num_rounds):
                 print(f"\n{STYLES.FG_CYAN}=== Starting Round {round_id + 1}/{num_rounds} ==={STYLES.RESET}")
 
-                # Select clients
-                num_clients = len(self.clients)
-                num_selected = max(1, int(client_fraction * num_clients))
-                selected_clients = random.sample(list(self.clients.keys()), num_selected)
-                print(f"Selected clients for this round: {selected_clients}")
-
-                client_responses = []
-                total_samples = 0
+                # If round is 0 and training algo is FedModCS ask for resource info
+                # Step 3: If FedModCS, request resource info from all clients
+                if training_algo == training_algos[3]:
+                    client_resource_info = {}
+                    if training_algo == training_algos[3]:
+                        logging.info("Training algorithm is FedModCS: Requesting resource info from all clients.")
+                        for client_id in self.clients:
+                            try:
+                                client_ip, client_port = self.clients[client_id]
+                                channel = grpc.insecure_channel(f"{client_ip}:{client_port}")
+                                stub = file_transfer_grpc.ClientStub(channel)
+                                response = stub.SendResourceInfo(empty_pb2.Empty())
+                                info = {
+                                    "dataset_size": response.dataset_size,
+                                    "cpu_speed_factor": response.cpu_speed_factor,
+                                    "network_bandwidth": response.network_bandwidth,
+                                    "has_gpu": response.has_gpu
+                                }
+                                client_resource_info[client_id] = info
+                                logging.info(f"Client {client_id} resource info: {info}")
+                            except Exception as e:
+                                logging.error(f"Failed to get resource info from client {client_id}: {e}")
 
                 # Function to send training requests to clients
                 def train_client(client_id):
@@ -254,9 +269,7 @@ class FLServer:
                         # Send current global model
                         model_weights_path = f"./server/models/global_model_round_{round_id}.pt"
                         self.send_file_to_client(model_weights_path, client_id)
-                        logging.info(f"Sent model weights to client {client_id}")
-                        # with open(model_weights_path, "rb") as f:
-                        #     model_weights = f.read()
+                        logging.info(f"Sent model weights to client {client_id}")                     
 
                         response = stub.StartTraining(file_transfer_pb2.TrainingRequest(
                             round_id=round_id,
@@ -272,6 +285,29 @@ class FLServer:
                     except Exception as e:
                         print(f"{STYLES.BG_RED}Error with client {client_id}: {str(e)}{STYLES.RESET}")
                         return client_id, None
+                    
+                # Select clients
+                num_clients = len(self.clients)
+                num_selected = max(1, int(client_fraction * num_clients))
+                selected_clients = random.sample(list(self.clients.keys()), num_selected)
+
+                file_size_bytes = os.path.getsize(initial_weights_path)
+                file_size_mb = file_size_bytes / (1024 * 1024)   
+
+                if training_algo == training_algos[3]:  # FedModCS
+                    selected_clients = self.select_clients_fedmodcs(client_resource_info, round_id, selected_clients, file_size_mb)
+                    num_selected = len(selected_clients)
+                
+                    if num_selected == 0:
+                        print(f"{STYLES.BG_RED}No clients selected for this round according to FedMODCS. Going for random selection...{STYLES.RESET}")
+                        num_clients = len(self.clients)
+                        num_selected = max(1, int(client_fraction * num_clients))
+                        selected_clients = random.sample(list(self.clients.keys()), num_selected)                        
+                
+                print(f"Selected clients for this round: {selected_clients}")
+
+                client_responses = []
+                total_samples = 0
 
                 # Parallelize client training
                 with concurrent.futures.ThreadPoolExecutor(max_workers=num_selected) as executor:
@@ -332,7 +368,7 @@ class FLServer:
                             if name not in avg_weights:
                                 avg_weights[name] = param * psi_arr[idx]
                             else:
-                                avg_weights[name] += param * psi_arr[idx]
+                                avg_weights[name] += param * psi_arr[idx]               
 
                 # FedSGD and FedAvg
                 else:
@@ -430,6 +466,109 @@ class FLServer:
         Dr_arr = np.array([np.linalg.norm(global_gradient) * np.linalg.norm(gradients_arr[i]) for i in range(gradients_arr.shape[0])])
         theta_arr = np.arccos(Nr_arr / Dr_arr)
         return theta_arr
+    
+    def select_clients_fedmodcs(self, client_resource_info, round_id, randomly_selected_clients, model_size):
+        """
+        Implements FedModCS algorithm for client selection based on resource information
+        
+        Parameters:
+        -----------
+        client_resource_info: dict
+            Resource information for each client {client_id: info_dict}
+        round_id: int
+            Current round of training
+        client_fraction: float
+            Fraction of clients to select
+        randomly_selected_clients: list
+            List of randomly selected clients
+            
+        Returns:
+        --------
+        list
+            Selected client IDs
+        """
+        # System parameters
+        T_cs = 0.0  # Client selection time
+        T_agg = 0.0  # Aggregation time
+        T_round = 300  # Maximum round time constraint (3 minutes in paper)
+        T_s_empty = 0.0  # Initial synchronization time
+        
+        K_prime = randomly_selected_clients.copy()  # Randomly selected clients
+        K_prime.sort()  # Sort for consistent logging
+        
+        logging.info(f"Round {round_id}: Initial random selection K': {K_prime}")
+        
+        # Setup client-specific parameters from resource info
+        t_UL = {}  # Upload times
+        t_UD = {}  # Update times
+        
+        for client_id in K_prime:
+            if client_id in client_resource_info:
+                info = client_resource_info[client_id]
+                bandwidth = info["network_bandwidth"]
+                dataset_size = info["dataset_size"]
+                cpu_factor = info["cpu_speed_factor"]
+
+                t_UL[client_id] = model_size / (bandwidth + 0.1)
+                t_UD[client_id] = dataset_size / (cpu_factor + 0.1)
+                if info["has_gpu"]:
+                    t_UD[client_id] *= 0.5  # GPU clients are faster   
+
+            else:
+                # Default values if resource info is missing
+                t_UL[client_id] = 1.0
+                t_UD[client_id] = 2.0                 
+        
+        # Initialization for the algorithm
+        S = []
+        T_s = T_s_empty
+        Theta = 0
+        
+        # Clone K_prime to avoid modifying the original during iteration
+        K_prime_remaining = K_prime.copy()
+        
+        # Client selection process
+        while len(K_prime_remaining) > 0:            
+            # Find client with maximum value according to the formula
+            max_value = -float('inf')
+            max_client = None
+            
+            for k in K_prime_remaining:
+                T_S_union_k = T_s + model_size / (client_resource_info[k]["network_bandwidth"] + 0.1)
+                denominator = T_S_union_k - T_s + t_UL[k] + max(0, t_UD[k] - Theta)
+                if denominator > 0:  # Avoid division by zero
+                    value = 1 / denominator
+                    if value > max_value:
+                        max_value = value
+                        max_client = k
+            
+            if max_client is None:
+                break  # No valid client found
+                
+            # Remove selected client from K'
+            x = max_client
+            K_prime_remaining.remove(x)
+            
+            # Update Theta'
+            Theta_prime = Theta + t_UL[x] + max(0, t_UD[x] - Theta)
+
+            T_S_union_x = T_s + model_size / (client_resource_info[x]["network_bandwidth"] + 0.1)
+            
+            # Calculate total time
+            t = T_cs + T_S_union_x + Theta_prime + T_agg
+            
+            # Check if adding this client keeps us within round time
+            if t < T_round:
+                Theta = Theta_prime
+                S.append(x)
+                T_s = T_S_union_x
+
+                logging.info(f"Added client {x} to selection. New Theta: {Theta}, Time: {t}")
+            else:
+                logging.info(f"Client {x} would exceed round time ({t} > {T_round}). Skipping.")
+        
+        logging.info(f"Final client selection S: {S}")
+        return S
         
 
 class FLServerServicer(file_transfer_grpc.FLServerServicer):

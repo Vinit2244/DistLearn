@@ -9,6 +9,8 @@ from pathlib import Path
 import torch
 import json
 import warnings
+import psutil
+import speedtest
 
 # Ignore all warnings
 warnings.filterwarnings("ignore")
@@ -133,14 +135,17 @@ class Client:
                 global DiabetesMLP, DiabetesDataset, train_diabetes_model, get_diabetes_optimizer
                 from DiabetesMLP import DiabetesMLP, DiabetesDataset, train_model as train_diabetes_model, get_optimizer as get_diabetes_optimizer
                 model = DiabetesMLP(input_size=16)
+
             elif model_type == "FashionMNISTCNN":
                 global FashionMNISTCNN, FashionMNISTDataset, train_fashion_mnist_model, get_fashion_mnist_optimizer
                 from FashionMNISTCNN import FashionMNISTCNN, FashionMNISTDataset, train_model as train_fashion_mnist_model, get_optimizer as get_fashion_mnist_optimizer
                 model = FashionMNISTCNN()
+
             elif model_type == "MNISTMLP":
                 global MNISTMLP, MNISTDataset, train_mnist_model, get_mnist_optimizer
                 from MNISTMLP import MNISTMLP, MNISTDataset, train_model as train_mnist_model, get_optimizer as get_mnist_optimizer
                 model = MNISTMLP()
+
             else:
                 raise ValueError(f"Unsupported model type: {model_type}")
             
@@ -163,6 +168,68 @@ class Client:
 
 
 class ClientServicer(file_transfer_grpc.ClientServicer):
+    def get_dataset_size(self):
+        try:
+            # Path to the config file
+            config_path = client_abs_path / 'received_files' / 'fl_config_client.json'
+            
+            # Check if config file exists
+            if not os.path.exists(config_path):
+                logging.warning("Config file not found, cannot determine dataset size")
+                return 0
+                
+            # Load the configuration
+            with open(config_path, 'r') as f:
+                config = json.load(f)
+            
+            # Get model type from config
+            model_type = config.get("model_type")
+            
+            # Determine dataset path based on model type
+            if model_type == "DiabetesMLP":
+                dataset_path = client_abs_path / "data/diabetes_dataset.csv"
+            elif model_type == "FashionMNISTCNN":
+                dataset_path = client_abs_path / "data/fashion_mnist_dataset.csv"
+            elif model_type == "MNISTMLP":
+                dataset_path = client_abs_path / "data/mnist_dataset.csv"
+            else:
+                logging.error(f"Unsupported model type: {model_type}")
+                return 0
+            
+            # Check if dataset file exists
+            if not os.path.exists(dataset_path):
+                logging.error(f"Dataset file not found: {dataset_path}")
+                return 0
+            
+            # Calculate dataset size by reading the CSV file
+            with open(dataset_path, 'r') as f:
+                # Subtract 1 to exclude header row
+                dataset_size = len(f.readlines()) - 1
+                
+            logging.info(f"Dataset size for {model_type}: {dataset_size} samples")
+            return dataset_size
+            
+        except Exception as e:
+            logging.error(f"Error determining dataset size: {str(e)}")
+            return 0
+
+    def get_cpu_speed_factor(self):
+        # Use CPU frequency as a proxy (can normalize if needed)
+        try:
+            freq = psutil.cpu_freq()
+            return freq.current / 1000  # Normalize to GHz
+        except:
+            return 1.0  # Default fallback
+
+    def get_network_bandwidth(self):
+        # Simple network test using speedtest (optional: cache this)
+        try:
+            st = speedtest.Speedtest()
+            download_mbps = st.download() / 1_000_000  # Convert to Mbps
+            return round(download_mbps, 2)
+        except:
+            return 10.0  # Fallback if speedtest fails
+        
     def TransferFile(self, request_iterator, context):
         try:
             # Try to get the first chunk
@@ -309,7 +376,28 @@ class ClientServicer(file_transfer_grpc.ClientServicer):
             return file_transfer_pb2.TrainingResponse(
                 err_code=1,
                 msg=f"Error during training: {str(e)}"
-            )            
+            )   
+
+    def SendResourceInfo(self, request, context):
+        try:
+            dataset_size = self.get_dataset_size()
+            cpu_speed_factor = self.get_cpu_speed_factor()
+            network_bandwidth = self.get_network_bandwidth()
+            has_gpu = torch.cuda.is_available()
+
+            logging.info(f"Sending resource info -> Dataset Size: {dataset_size}, CPU Factor: {cpu_speed_factor}, Bandwidth: {network_bandwidth} Mbps, GPU: {has_gpu}")
+            
+            return file_transfer_pb2.ResourceInfo(
+                dataset_size=dataset_size,
+                cpu_speed_factor=cpu_speed_factor,
+                network_bandwidth=network_bandwidth,
+                has_gpu=has_gpu
+            )
+        except Exception as e:
+            logging.error(f"Error in SendResourceInfo: {e}", exc_info=True)
+            context.set_code(grpc.StatusCode.INTERNAL)
+            context.set_details('Failed to retrieve resource info')
+            raise        
 
 
 # ============================= FUNCTIONS ============================
