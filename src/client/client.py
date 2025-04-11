@@ -36,9 +36,23 @@ class ServerSessionManager:
         self.channel = None
 
     def __enter__(self):
-        file_path = client_folder_abs_path / "../server.crt"
-        with open(file_path, "rb") as f:
+        trusted_certs_path = client_folder_abs_path / "../ca.crt"
+        with open(trusted_certs_path, "rb") as f:
             trusted_certs = f.read()
+
+        client_key_path = client_folder_abs_path / f"certs/client_{client.id}.key"
+        with open(client_key_path, "rb") as f:
+            client_key = f.read()
+
+        client_certificate_path = client_folder_abs_path / f"certs/client_{client.id}.crt"
+        with open(client_certificate_path, "rb") as f:
+            client_certificate = f.read()
+        
+        credentials = grpc.ssl_channel_credentials(
+            root_certificates=trusted_certs,
+            private_key=client_key,
+            certificate_chain=client_certificate
+        )
 
         credentials = grpc.ssl_channel_credentials(root_certificates=trusted_certs)
         self.channel = grpc.secure_channel(f"{self.server_ip}:{self.server_port}", credentials)

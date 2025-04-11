@@ -55,11 +55,23 @@ class ClientSessionManager:
         self.channel = None
 
     def __enter__(self):
-        client_root_certificate_relative_path = server_folder_abs_path / f"received_files/{self.client_id}/client_{self.client_id}.crt"
-        with open(client_root_certificate_relative_path, "rb") as f:
+        trusted_certs_path = server_folder_abs_path / "certs/ca.crt"
+        with open(trusted_certs_path, "rb") as f:
             trusted_certs = f.read()
 
-        credentials = grpc.ssl_channel_credentials(root_certificates=trusted_certs)
+        server_key_path = server_folder_abs_path / "certs/server.key"
+        with open(server_key_path, "rb") as f:
+            server_key = f.read()
+
+        server_certificate_path = server_folder_abs_path / "certs/server.crt"
+        with open(server_certificate_path, "rb") as f:
+            server_certificate = f.read()
+        
+        credentials = grpc.ssl_channel_credentials(
+            root_certificates=trusted_certs,
+            private_key=server_key,
+            certificate_chain=server_certificate
+        )
         self.channel = grpc.secure_channel(f"{self.client_ip}:{self.client_port}", credentials)
         client_stub = file_transfer_grpc.ClientStub(self.channel)
         return client_stub
@@ -185,8 +197,7 @@ class FLServer:
             "learning_rate":    learning_rate,
             "optimizer":        optimizer,
             "batch_size":       batch_size,
-            "model_type":       model_type,
-            "client_fraction":  client_fraction
+            "model_type":       model_type
         }
 
         fl_config_client = {
@@ -739,7 +750,8 @@ def menu():
                 continue
 
             # Client fraction
-            client_fraction = float(input(f"{STYLES.FG_YELLOW}Enter client fraction: {STYLES.RESET}"))
+            # client_fraction = float(input(f"{STYLES.FG_YELLOW}Enter client fraction: {STYLES.RESET}"))
+            client_fraction = 1.0
             if client_fraction <= 0 or client_fraction > 1:
                 print(f"{STYLES.BG_RED}Invalid client fraction. Value must be between 0.0 and 1.0.{STYLES.RESET}")
                 wait_for_enter()
