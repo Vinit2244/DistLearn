@@ -34,6 +34,10 @@ setup_and_visualise:
 start_clients:
 	@for i in $(shell seq 1 $$(($(IID) + $(NonIID)))); do \
 		port=$$(($(SERVER_PORT) + $$i)); \
+		openssl genrsa -out ../clients/$$i/client_$$i.key 2048; \
+		openssl req -new -key ../clients/$$i/client_$$i.key -out ../clients/$$i/client_$$i.csr -config ../clients/$$i/client_$$i.cnf; \
+		openssl x509 -req -in ../clients/$$i/client_$$i.csr -CA ../CA/ca.crt -CAkey ../CA/ca.key -CAcreateserial -out ../clients/$$i/client_$$i.crt -days 365 -sha256 -extfile ../clients/$$i/client_$$i.cnf -extensions req_ext; \
+		rm -f ../clients/$$i/client_$$i.csr; \
 		python3 ../clients/$$i/client.py --port $$port --id $$i --mode a & \
 		echo $$! >> $(PID_FILE); \
 	done

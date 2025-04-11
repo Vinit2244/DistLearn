@@ -1,0 +1,27 @@
+[ req ]
+default_bits       = 2048
+prompt             = no
+default_md         = sha256
+distinguished_name = req_distinguished_name
+attributes         = req_attributes
+req_extensions     = req_ext
+
+[ req_distinguished_name ]
+countryName               = IN
+stateOrProvinceName       = Telangana
+localityName              = Hyderabad
+organizationName          = DistLearn Pvt Ltd
+organizationalUnitName    = Machine Learning
+commonName                = DistLearn
+emailAddress              = team10.ds25@gmail.com
+
+[ req_attributes ]
+challengePassword         = liniftw!
+unstructuredName          = DLPL
+
+[ req_ext ]
+subjectAltName = @alt_names
+
+[ alt_names ]
+DNS.1 = localhost
+IP.1 = 127.0.0.1

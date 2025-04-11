@@ -31,6 +31,9 @@ from MNISTMLP import MNISTMLP, evaluate_model as evaluate_mnist_model
 
 sns.set(style='whitegrid', context='talk')
 
+os.environ["GRPC_VERBOSITY"] = "ERROR"
+os.environ["GRPC_TRACE"] = ""
+
 
 # ============================= GLOBALS =============================
 training_algos = ["FedSGD", "FedAvg", "FedAdp", "FedModCS"]
@@ -42,6 +45,28 @@ ALPHA = 5
 
 
 # ============================= CLASSES =============================
+class ClientSessionManager:
+    def __init__(self, client_id, client_ip, client_port):
+        self.client_id = client_id
+        self.client_ip = client_ip
+        self.client_port = client_port
+        self.channel = None
+
+    def __enter__(self):
+        client_root_certificate_relative_path = f'./server/received_files/{self.client_id}/client_{self.client_id}.crt'
+        with open(client_root_certificate_relative_path, "rb") as f:
+            trusted_certs = f.read()
+
+        credentials = grpc.ssl_channel_credentials(root_certificates=trusted_certs)
+        self.channel = grpc.secure_channel(f"{self.client_ip}:{self.client_port}", credentials)
+        client_stub = file_transfer_grpc.ClientStub(self.channel)
+        return client_stub
+
+    def __exit__(self, exc_type, exc_value, traceback):
+        if self.channel:
+            self.channel.close()
+
+
 class FLServer:
     def __init__(self, port, ip):
         self.my_port = port
@@ -84,7 +109,15 @@ class FLServer:
     # Starting FL server
         fl_server = grpc.server(futures.ThreadPoolExecutor(max_workers=10))
         file_transfer_grpc.add_FLServerServicer_to_server(FLServerServicer(), fl_server)
-        fl_server.add_insecure_port(f"{self.my_ip}:{self.my_port}")
+
+        with open(Path(__file__).parent / 'server.crt', 'rb') as f:
+            cert = f.read()
+        with open(Path(__file__).parent / 'server.key', 'rb') as f:
+            key = f.read()
+
+        server_credentials = grpc.ssl_server_credentials(((key, cert),))
+
+        fl_server.add_secure_port(f"{self.my_ip}:{self.my_port}", server_credentials)
         fl_server.start()
         logging.info(f"FL server started at address {self.my_ip}:{self.my_port}")
         clear_screen()
@@ -102,41 +135,38 @@ class FLServer:
         print("FL server terminated")
 
     def send_file_to_client(self, file_path, client_id):
-        print(self.clients)
         if client_id not in self.clients.keys():
             print(f"{STYLES.BG_RED}Client not registered. Please try again.{STYLES.RESET}")
             return
         client_ip, client_port = self.clients[client_id]
-        channel = grpc.insecure_channel(f"{client_ip}:{client_port}")
-        stub = file_transfer_grpc.ClientStub(channel)
-        
-        filename = file_path.split('/')[-1]
-        file_size = os.path.getsize(file_path)
-        logging.info(f"Starting to send file: {filename} (size: {file_size} bytes)")
-        
-        def request_iterator():
-            with open(file_path, 'rb') as f:
-                chunk_number = 0
-                while True:
-                    chunk = f.read(CHUNK_SIZE)
-                    if not chunk:
-                        break
-                    chunk_number += 1
-                    logging.info(f"Sending chunk {chunk_number} of {len(chunk)} bytes")
-                    yield file_transfer_pb2.FileChunk(
-                        filename=filename,
-                        id=-1,
-                        chunk=chunk,
-                        is_last_chunk=len(chunk) < CHUNK_SIZE
-                    )
-        
-        response = stub.TransferFile(request_iterator())
-        if response.err_code == 0:
-            logging.info(f"File transfer successful: {response.msg}")
-            print(f"{STYLES.FG_GREEN}Success: File sent successfully!{STYLES.RESET}")
-        else:
-            logging.error(f"File transfer failed: {response.msg}")
-            print(f"{STYLES.BG_RED + STYLES.FG_WHITE}Error: {response.msg}{STYLES.RESET}")
+        with ClientSessionManager(client_id, client_ip, client_port) as stub:
+            filename = file_path.split('/')[-1]
+            file_size = os.path.getsize(file_path)
+            logging.info(f"Starting to send file: {filename} (size: {file_size} bytes)")
+            
+            def request_iterator():
+                with open(file_path, 'rb') as f:
+                    chunk_number = 0
+                    while True:
+                        chunk = f.read(CHUNK_SIZE)
+                        if not chunk:
+                            break
+                        chunk_number += 1
+                        logging.info(f"Sending chunk {chunk_number} of {len(chunk)} bytes")
+                        yield file_transfer_pb2.FileChunk(
+                            filename=filename,
+                            id=-1,
+                            chunk=chunk,
+                            is_last_chunk=len(chunk) < CHUNK_SIZE
+                        )
+            
+            response = stub.TransferFile(request_iterator())
+            if response.err_code == 0:
+                logging.info(f"File transfer successful: {response.msg}")
+                # print(f"{STYLES.FG_GREEN}Success: File sent successfully!{STYLES.RESET}")
+            else:
+                logging.error(f"File transfer failed: {response.msg}")
+                print(f"{STYLES.BG_RED + STYLES.FG_WHITE}Error: {response.msg}{STYLES.RESET}")
 
     def initialize_fl(self, training_algo, num_epochs, learning_rate, optimizer, batch_size, model_type, client_fraction):
         fl_config_server = {
@@ -245,17 +275,16 @@ class FLServer:
                         for client_id in self.clients:
                             try:
                                 client_ip, client_port = self.clients[client_id]
-                                channel = grpc.insecure_channel(f"{client_ip}:{client_port}")
-                                stub = file_transfer_grpc.ClientStub(channel)
-                                response = stub.SendResourceInfo(empty_pb2.Empty())
-                                info = {
-                                    "dataset_size": response.dataset_size,
-                                    "cpu_speed_factor": response.cpu_speed_factor,
-                                    "network_bandwidth": response.network_bandwidth,
-                                    "has_gpu": response.has_gpu
-                                }
-                                client_resource_info[client_id] = info
-                                logging.info(f"Client {client_id} resource info: {info}")
+                                with ClientSessionManager(client_id, client_ip, client_port) as stub:
+                                    response = stub.SendResourceInfo(empty_pb2.Empty())
+                                    info = {
+                                        "dataset_size": response.dataset_size,
+                                        "cpu_speed_factor": response.cpu_speed_factor,
+                                        "network_bandwidth": response.network_bandwidth,
+                                        "has_gpu": response.has_gpu
+                                    }
+                                    client_resource_info[client_id] = info
+                                    logging.info(f"Client {client_id} resource info: {info}")
                             except Exception as e:
                                 logging.error(f"Failed to get resource info from client {client_id}: {e}")
 
@@ -263,24 +292,21 @@ class FLServer:
                 def train_client(client_id):
                     try:
                         client_ip, client_port = self.clients[client_id]
-                        channel = grpc.insecure_channel(f"{client_ip}:{client_port}")
-                        stub = file_transfer_grpc.ClientStub(channel)
+                        with ClientSessionManager(client_id, client_ip, client_port) as stub:
+                            # Send current global model
+                            model_weights_path = f"./server/models/global_model_round_{round_id}.pt"
+                            self.send_file_to_client(model_weights_path, client_id)
+                            logging.info(f"Sent model weights to client {client_id}")                     
 
-                        # Send current global model
-                        model_weights_path = f"./server/models/global_model_round_{round_id}.pt"
-                        self.send_file_to_client(model_weights_path, client_id)
-                        logging.info(f"Sent model weights to client {client_id}")                     
+                            response = stub.StartTraining(file_transfer_pb2.TrainingRequest(
+                                round_id=round_id,
+                                model_version="1.0",
+                                # model_weights=model_weights,
+                                local_epochs=fl_config["num_epochs"],
+                                model_path = model_weights_path.split('/')[-1]
+                            ))
 
-                        response = stub.StartTraining(file_transfer_pb2.TrainingRequest(
-                            round_id=round_id,
-                            model_version="1.0",
-                            # model_weights=model_weights,
-                            local_epochs=fl_config["num_epochs"],
-                            model_path = model_weights_path.split('/')[-1]
-                        ))
-
-                        channel.close()
-                        return client_id, response
+                            return client_id, response
 
                     except Exception as e:
                         print(f"{STYLES.BG_RED}Error with client {client_id}: {str(e)}{STYLES.RESET}")
@@ -304,7 +330,7 @@ class FLServer:
                         num_selected = max(1, int(client_fraction * num_clients))
                         selected_clients = random.sample(list(self.clients.keys()), num_selected)                        
                 
-                print(f"Selected clients for this round: {selected_clients}")
+                # print(f"Selected clients for this round: {selected_clients}")
 
                 client_responses = []
                 total_samples = 0
@@ -468,25 +494,6 @@ class FLServer:
         return theta_arr
     
     def select_clients_fedmodcs(self, client_resource_info, round_id, randomly_selected_clients, model_size):
-        """
-        Implements FedModCS algorithm for client selection based on resource information
-        
-        Parameters:
-        -----------
-        client_resource_info: dict
-            Resource information for each client {client_id: info_dict}
-        round_id: int
-            Current round of training
-        client_fraction: float
-            Fraction of clients to select
-        randomly_selected_clients: list
-            List of randomly selected clients
-            
-        Returns:
-        --------
-        list
-            Selected client IDs
-        """
         # System parameters
         T_cs = 0.0  # Client selection time
         T_agg = 0.0  # Aggregation time
@@ -569,7 +576,7 @@ class FLServer:
         
         logging.info(f"Final client selection S: {S}")
         return S
-        
+
 
 class FLServerServicer(file_transfer_grpc.FLServerServicer):
     def __init__(self):

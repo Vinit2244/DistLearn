@@ -121,3 +121,29 @@ The `src` directory contains the base code for a **server-client file transfer s
    - client_fraction : Fraction of clients to involve in training in every round
 
 10. After initialisation is done, start federated training by choosing option 4 from the server menu. Enter the number of rounds of federated learning you want to perform.
+
+## 🔐 Security Features
+
+The system includes SSL/TLS support with custom certificates. The repository includes a Certificate Authority (CA) setup for generating and signing certificates.
+
+### CA Certificate Generation
+
+```bash
+# Inside CA folder
+openssl genrsa -out ca.key 2048
+openssl req -x509 -new -nodes -key ca.key -sha256 -days 365 -out ca.crt
+```
+
+### Server Certificate Generation
+
+```bash
+# Create server key and CSR
+openssl genrsa -out server.key 2048
+openssl req -new -key server.key -out server.csr -config server.cnf
+
+# Get CSR signed by CA
+openssl x509 -req -in server.csr -CA ../CA/ca.crt -CAkey ../CA/ca.key \
+  -CAcreateserial -out server.crt -days 365 -sha256 -extfile server.cnf -extensions req_ext
+```
+
+Source: https://resonant-cement-f3c.notion.site/Self-Signed-Certificates-Create-your-own-Certificate-Authority-CA-for-local-HTTPS-sites-536636144b124904a52e4ac68973bb2c

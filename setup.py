@@ -18,7 +18,8 @@ COLOR_PALETTE = "viridis"
 
 
 def create_folders_and_distribute_data(n, IID, NonIID, x, data_folder='../data', clients_folder='../clients', 
-                                      server_data_folder='../server_data', client_script="./client/client.py"):
+                                      server_data_folder='../server_data', client_script="./client/client.py",
+                                      server_certificate='./server/server.crt'):
     # Create clients and server_data folders
     os.makedirs(clients_folder, exist_ok=True)
     os.makedirs(server_data_folder, exist_ok=True)
@@ -27,12 +28,47 @@ def create_folders_and_distribute_data(n, IID, NonIID, x, data_folder='../data',
     if not os.path.exists(client_script):
         raise FileNotFoundError(f"Client script not found at {client_script}")
     
+    # Verify server certificate exists
+    if not os.path.exists(server_certificate):
+        raise FileNotFoundError(f"Client script not found at {server_certificate}")
+    
     # Create client folders and copy client script into each one
     for i in range(1, n + 1):
         client_dir = os.path.join(clients_folder, str(i))
         os.makedirs(client_dir, exist_ok=True)
         os.makedirs(os.path.join(client_dir, "data"), exist_ok=True)
         shutil.copy(client_script, client_dir)
+        shutil.copy(server_certificate, clients_folder)
+        with open(f"{client_dir}/client_{i}.cnf", "w") as f:
+            config_file_content = [
+                f'[ req ]\n', 
+                f'default_bits       = 2048\n', 
+                f'prompt             = no\n', 
+                f'default_md         = sha256\n', 
+                f'distinguished_name = req_distinguished_name\n', 
+                f'attributes         = req_attributes\n', 
+                f'req_extensions     = req_ext\n', 
+                f'\n', 
+                f'[ req_distinguished_name ]\n', 
+                f'countryName               = IN\n', 
+                f'stateOrProvinceName       = Telangana\n', 
+                f'localityName              = Hyderabad\n', 
+                f'organizationName          = Client_{i} Pvt Ltd\n', 
+                f'organizationalUnitName    = FL Client\n', 
+                f'commonName                = Client_{i}\n', 
+                f'emailAddress              = client{i}@gmail.com\n', 
+                f'\n', 
+                f'[ req_attributes ]\n', 
+                f'challengePassword         = c{i}\n', 
+                f'unstructuredName          = c{i}\n', 
+                f'\n', 
+                f'[ req_ext ]\n', 
+                f'subjectAltName = @alt_names\n', 
+                f'\n', 
+                f'[ alt_names ]\n', 
+                f'DNS.1 = localhost\n', 
+                f'IP.1 = 127.0.0.1\n']
+            f.writelines(config_file_content)
     
     # List of dataset files to process
     dataset_files = ['diabetes_dataset.csv', 'fashion_mnist_dataset.csv', 'mnist_dataset.csv']
@@ -261,5 +297,3 @@ if __name__ == "__main__":
     
     if args.visualize_distributed:
         visualize_distributed_data(num_clients=args.num_clients)
-
-
