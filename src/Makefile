@@ -3,9 +3,10 @@ OUT_DIR=generated
 
 # Allow overriding with certain cmd line args
 SERVER_PORT ?= 50051
-IID ?= 3
-NonIID ?= 3
+IID ?= 7
+NonIID ?= 0
 x ?= 1
+ENCRYPT ?= 1
 
 # Find all .proto files in the proto directory
 PROTO_FILES=$(wildcard $(PROTO_DIR)/*.proto)
@@ -23,7 +24,7 @@ consul:
 	consul agent -dev
 	
 start_server:
-	python3 server/fl_server.py --port=$(SERVER_PORT)
+	python3 server/fl_server.py --port=$(SERVER_PORT) --encrypt=$(ENCRYPT)
 
 do_setup:
 	python3 setup/setup.py --num_clients=$$(($(IID) + $(NonIID))) --IID=$(IID) --NonIID=$(NonIID) --x=$(x)
@@ -38,7 +39,7 @@ start_clients:
 		openssl req -new -key clients/$$i/certs/client_$$i.key -out clients/$$i/certs/client_$$i.csr -config clients/$$i/certs/client_$$i.cnf; \
 		openssl x509 -req -in clients/$$i/certs/client_$$i.csr -CA CA/ca.crt -CAkey CA/ca.key -CAcreateserial -out clients/$$i/certs/client_$$i.crt -days 365 -sha256 -extfile clients/$$i/certs/client_$$i.cnf -extensions req_ext; \
 		rm -f clients/$$i/certs/client_$$i.csr; \
-		python3 clients/$$i/client.py --port $$port --id $$i --mode a & \
+		python3 clients/$$i/client.py --port $$port --id $$i --mode a --encrypt=$(ENCRYPT) & \
 		echo $$! >> $(PID_FILE); \
 	done
 
@@ -53,6 +54,7 @@ kill_clients:
 	fi
 
 clean:
+	@$(MAKE) kill_clients
 	- rm -rf $(OUT_DIR)/*_pb2.py*
 	- rm -rf $(OUT_DIR)/*_pb2_grpc.py*
 	- find . -name "__pycache__" -type d -exec rm -rf {} +

@@ -23,7 +23,9 @@ def create_folders_and_distribute_data(n, IID, NonIID, x, data_folder=setup_fold
                                        server_data_folder=setup_folder_abs_path / "../server/data", 
                                        client_script=setup_folder_abs_path / "../client/client.py",
                                        server_certificate=setup_folder_abs_path / "../server/certs/server.crt",
-                                       ca_certificate=setup_folder_abs_path / "../CA/ca.crt"):
+                                       ca_certificate=setup_folder_abs_path / "../CA/ca.crt",
+                                       test_data_fraction=0.1,
+                                       num_data_points=3000):
     # Create clients and server_data folders
     clients_folder.mkdir(parents=True, exist_ok=True)
     server_data_folder.mkdir(parents=True, exist_ok=True)
@@ -88,7 +90,7 @@ def create_folders_and_distribute_data(n, IID, NonIID, x, data_folder=setup_fold
         # Reading and splitting data
         dataset_path = data_folder / dataset_file
         data = pd.read_csv(dataset_path)
-        train_data, test_data = train_test_split(data, test_size=0.01, random_state=42)
+        train_data, test_data = train_test_split(data, test_size=test_data_fraction, random_state=42)
         
         # Save the test data to the server_data folder
         test_data.to_csv(server_data_folder / dataset_file, index=False)
@@ -106,14 +108,14 @@ def create_folders_and_distribute_data(n, IID, NonIID, x, data_folder=setup_fold
             
             for i in range(1, n + 1):
                 if i <= IID:
-                    client_sample = train_data.sample(n=600, random_state=42 + i)
+                    client_sample = train_data.sample(n=num_data_points, random_state=42 + i)
                 else:
                     # Non-IID: randomly select a single class for this client.
                     selected_class = np.random.choice(unique_classes)
                     subset = train_data[train_data[label_column] == selected_class]
 
-                    replace_flag = len(subset) < 600
-                    client_sample = subset.sample(n=600, replace=replace_flag, random_state=42 + i)
+                    replace_flag = len(subset) < num_data_points
+                    client_sample = subset.sample(n=num_data_points, replace=replace_flag, random_state=42 + i)
                 
                 client_data_folder = clients_folder / str(i) / "data"
                 client_sample.to_csv(client_data_folder / dataset_file, index=False)

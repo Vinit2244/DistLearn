@@ -36,26 +36,29 @@ class ServerSessionManager:
         self.channel = None
 
     def __enter__(self):
-        trusted_certs_path = client_folder_abs_path / "../ca.crt"
-        with open(trusted_certs_path, "rb") as f:
-            trusted_certs = f.read()
+        if encrypt:
+            trusted_certs_path = client_folder_abs_path / "../ca.crt"
+            with open(trusted_certs_path, "rb") as f:
+                trusted_certs = f.read()
 
-        client_key_path = client_folder_abs_path / f"certs/client_{client.id}.key"
-        with open(client_key_path, "rb") as f:
-            client_key = f.read()
+            client_key_path = client_folder_abs_path / f"certs/client_{client.id}.key"
+            with open(client_key_path, "rb") as f:
+                client_key = f.read()
 
-        client_certificate_path = client_folder_abs_path / f"certs/client_{client.id}.crt"
-        with open(client_certificate_path, "rb") as f:
-            client_certificate = f.read()
-        
-        credentials = grpc.ssl_channel_credentials(
-            root_certificates=trusted_certs,
-            private_key=client_key,
-            certificate_chain=client_certificate
-        )
+            client_certificate_path = client_folder_abs_path / f"certs/client_{client.id}.crt"
+            with open(client_certificate_path, "rb") as f:
+                client_certificate = f.read()
+            
+            credentials = grpc.ssl_channel_credentials(
+                root_certificates=trusted_certs,
+                private_key=client_key,
+                certificate_chain=client_certificate
+            )
 
-        credentials = grpc.ssl_channel_credentials(root_certificates=trusted_certs)
-        self.channel = grpc.secure_channel(f"{self.server_ip}:{self.server_port}", credentials)
+            credentials = grpc.ssl_channel_credentials(root_certificates=trusted_certs)
+            self.channel = grpc.secure_channel(f"{self.server_ip}:{self.server_port}", credentials)
+        else:
+            self.channel = grpc.insecure_channel(f"{self.server_ip}:{self.server_port}")
         global server_stub
         server_stub = file_transfer_grpc.FLServerStub(self.channel)
 
@@ -77,24 +80,27 @@ class Client:
         client_server = grpc.server(futures.ThreadPoolExecutor(max_workers=10))
         file_transfer_grpc.add_ClientServicer_to_server(ClientServicer(), client_server)
 
-        certificate_chain_path = client_folder_abs_path / f"certs/client_{self.id}.crt"
-        with open(certificate_chain_path, "rb") as f:
-            certificate_chain = f.read()
+        if encrypt:
+            certificate_chain_path = client_folder_abs_path / f"certs/client_{self.id}.crt"
+            with open(certificate_chain_path, "rb") as f:
+                certificate_chain = f.read()
 
-        private_key_path = client_folder_abs_path / f"certs/client_{self.id}.key"
-        with open(private_key_path, "rb") as f:
-            private_key = f.read()
+            private_key_path = client_folder_abs_path / f"certs/client_{self.id}.key"
+            with open(private_key_path, "rb") as f:
+                private_key = f.read()
 
-        root_certificate_path = client_folder_abs_path / "../ca.crt"
-        with open(root_certificate_path, "rb") as f:
-            root_certificate = f.read()
-        
-        client_credentials = grpc.ssl_server_credentials(
-            [(private_key, certificate_chain)],
-            root_certificates=root_certificate
-        )
+            root_certificate_path = client_folder_abs_path / "../ca.crt"
+            with open(root_certificate_path, "rb") as f:
+                root_certificate = f.read()
+            
+            client_credentials = grpc.ssl_server_credentials(
+                [(private_key, certificate_chain)],
+                root_certificates=root_certificate
+            )
 
-        client_server.add_secure_port(f"{self.ip}:{self.port}", client_credentials)
+            client_server.add_secure_port(f"{self.ip}:{self.port}", client_credentials)
+        else:
+            client_server.add_insecure_port(f"{self.ip}:{self.port}")
         client_server.start()
         logging.info(f"Client {self.id} server started at address {self.ip}:{self.port}")
 
@@ -473,9 +479,12 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--port", type=int, required=True, help="Client port")
     parser.add_argument("--id", type=int, required=True, help="Client ID")
-    parser.add_argument("--mode", type=str, default="i", help="Mode: i for interactive, a for automatic") 
+    parser.add_argument("--mode", type=str, default="i", help="Mode: i for interactive, a for automatic")
+    parser.add_argument("--encrypt", type=int, default=0, help="Enable encryption (1) or not (0)")
 
     args = parser.parse_args()
+    global encrypt
+    encrypt = args.encrypt
     mode = args.mode
 
     global my_port, my_id, my_ip

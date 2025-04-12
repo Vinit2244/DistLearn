@@ -2,6 +2,7 @@
 import os
 import sys
 import grpc
+import time
 import json
 import torch
 import random
@@ -55,24 +56,27 @@ class ClientSessionManager:
         self.channel = None
 
     def __enter__(self):
-        trusted_certs_path = server_folder_abs_path / "certs/ca.crt"
-        with open(trusted_certs_path, "rb") as f:
-            trusted_certs = f.read()
+        if encrypt:
+            trusted_certs_path = server_folder_abs_path / "certs/ca.crt"
+            with open(trusted_certs_path, "rb") as f:
+                trusted_certs = f.read()
 
-        server_key_path = server_folder_abs_path / "certs/server.key"
-        with open(server_key_path, "rb") as f:
-            server_key = f.read()
+            server_key_path = server_folder_abs_path / "certs/server.key"
+            with open(server_key_path, "rb") as f:
+                server_key = f.read()
 
-        server_certificate_path = server_folder_abs_path / "certs/server.crt"
-        with open(server_certificate_path, "rb") as f:
-            server_certificate = f.read()
-        
-        credentials = grpc.ssl_channel_credentials(
-            root_certificates=trusted_certs,
-            private_key=server_key,
-            certificate_chain=server_certificate
-        )
-        self.channel = grpc.secure_channel(f"{self.client_ip}:{self.client_port}", credentials)
+            server_certificate_path = server_folder_abs_path / "certs/server.crt"
+            with open(server_certificate_path, "rb") as f:
+                server_certificate = f.read()
+            
+            credentials = grpc.ssl_channel_credentials(
+                root_certificates=trusted_certs,
+                private_key=server_key,
+                certificate_chain=server_certificate
+            )
+            self.channel = grpc.secure_channel(f"{self.client_ip}:{self.client_port}", credentials)
+        else:
+            self.channel = grpc.insecure_channel(f"{self.client_ip}:{self.client_port}")
         client_stub = file_transfer_grpc.ClientStub(self.channel)
         return client_stub
 
@@ -125,24 +129,27 @@ class FLServer:
         fl_server = grpc.server(futures.ThreadPoolExecutor(max_workers=10))
         file_transfer_grpc.add_FLServerServicer_to_server(FLServerServicer(), fl_server)
 
-        root_certificate_path = server_folder_abs_path / "certs/ca.crt"
-        with open(root_certificate_path, "rb") as f:
-            root_certificate = f.read()
+        if encrypt:
+            root_certificate_path = server_folder_abs_path / "certs/ca.crt"
+            with open(root_certificate_path, "rb") as f:
+                root_certificate = f.read()
 
-        certificate_chain_path = server_folder_abs_path / "certs/server.crt"
-        with open(certificate_chain_path, "rb") as f:
-            certificate_chain = f.read()
-        
-        private_key_path = server_folder_abs_path / "certs/server.key"
-        with open(private_key_path, "rb") as f:
-            private_key = f.read()
+            certificate_chain_path = server_folder_abs_path / "certs/server.crt"
+            with open(certificate_chain_path, "rb") as f:
+                certificate_chain = f.read()
+            
+            private_key_path = server_folder_abs_path / "certs/server.key"
+            with open(private_key_path, "rb") as f:
+                private_key = f.read()
 
-        server_credentials = grpc.ssl_server_credentials(
-            [(private_key, certificate_chain)],
-            root_certificates=root_certificate
-        )
+            server_credentials = grpc.ssl_server_credentials(
+                [(private_key, certificate_chain)],
+                root_certificates=root_certificate
+            )
 
-        fl_server.add_secure_port(f"{self.my_ip}:{self.my_port}", server_credentials)
+            fl_server.add_secure_port(f"{self.my_ip}:{self.my_port}", server_credentials)
+        else:
+            fl_server.add_insecure_port(f"{self.my_ip}:{self.my_port}")
         fl_server.start()
         logging.info(f"FL server started at address {self.my_ip}:{self.my_port}")
         self.server_instance = fl_server
@@ -253,7 +260,7 @@ class FLServer:
             self.send_file_to_client(config_path, client_id)
             self.send_file_to_client(model_path, client_id)
 
-    def start_federated_training(self, num_rounds):
+    def start_federated_training(self, num_rounds, client_fraction):
         try:
             server_config_path = server_folder_abs_path / "fl_config_server.json"
             with open(server_config_path, "r") as f:
@@ -261,7 +268,6 @@ class FLServer:
  
             training_algo   = fl_config["training_algo"]
             model_type      = fl_config["model_type"]
-            client_fraction = fl_config["client_fraction"]
             lr              = fl_config["learning_rate"]
             optimizer       = fl_config["optimizer"]
 
@@ -283,8 +289,10 @@ class FLServer:
             if model_type == model_types[2]:
                 smoothed_theta_arr = np.zeros(len(self.clients))
 
+            start_time_total = time.time()
             for round_id in range(num_rounds):
                 print(f"\n{STYLES.FG_CYAN}=== Starting Round {round_id + 1}/{num_rounds} ==={STYLES.RESET}")
+                start_time_round = time.time()
 
                 # Function to send training requests to clients
                 def train_client(client_id):
@@ -446,8 +454,8 @@ class FLServer:
                     print(f"{STYLES.BG_RED}Invalid model type in config{STYLES.RESET}")
                     return
 
-                print(f"Loss: {round(loss, 4)}")
-                print(f"Accuracy: {round(acc, 4)}%")
+                print(f"{STYLES.FG_YELLOW}Loss: {round(loss, 4)}")
+                print(f"Accuracy: {round(acc, 4)}%{STYLES.RESET}")
 
                 model_name = f"{training_algo}_{model_type}_{optimizer}"
 
@@ -462,11 +470,13 @@ class FLServer:
 
                 print(f"{STYLES.FG_GREEN}Round {round_id + 1} completed{STYLES.RESET}")
                 print(f"  Total Samples: {total_samples}")
+                print(f"  Time taken for round {round_id + 1}: {time.time() - start_time_round:.2f} seconds")
 
             print(f"\n{STYLES.FG_GREEN}Federated training completed after {num_rounds} rounds{STYLES.RESET}")
+            print(f"{STYLES.FG_YELLOW}Total time taken: {time.time() - start_time_total:.2f} seconds{STYLES.RESET}")
 
             # Plotting loss and accuracy
-            make_plots(len(self.clients), model_name)
+            make_plots(len(self.clients), model_name, client_fraction, server_folder_abs_path / "metrics.json")
 
         except Exception as e:
             print(f"{STYLES.BG_RED}Error during federated training: {str(e)}{STYLES.RESET}")
@@ -752,10 +762,10 @@ def menu():
             # Client fraction
             # client_fraction = float(input(f"{STYLES.FG_YELLOW}Enter client fraction: {STYLES.RESET}"))
             client_fraction = 1.0
-            if client_fraction <= 0 or client_fraction > 1:
-                print(f"{STYLES.BG_RED}Invalid client fraction. Value must be between 0.0 and 1.0.{STYLES.RESET}")
-                wait_for_enter()
-                continue
+            # if client_fraction <= 0 or client_fraction > 1:
+            #     print(f"{STYLES.BG_RED}Invalid client fraction. Value must be between 0.0 and 1.0.{STYLES.RESET}")
+            #     wait_for_enter()
+            #     continue
             
             # Check if clients are registered or not
             if len(fl_server.clients) == 0:
@@ -790,8 +800,15 @@ def menu():
                 print(f"{STYLES.BG_RED}Number of rounds must be positive{STYLES.RESET}")
                 wait_for_enter()
                 continue
+            
+            # Client fraction
+            client_fraction = float(input(f"{STYLES.FG_YELLOW}Enter client fraction: {STYLES.RESET}"))
+            if client_fraction <= 0 or client_fraction > 1:
+                print(f"{STYLES.BG_RED}Invalid client fraction. Value must be between 0.0 and 1.0.{STYLES.RESET}")
+                wait_for_enter()
+                continue
                 
-            fl_server.start_federated_training(num_rounds)
+            fl_server.start_federated_training(num_rounds, client_fraction)
             wait_for_enter()          
         
         elif choice == "4":
@@ -802,84 +819,123 @@ def menu():
             wait_for_enter()
 
 
-def make_plots(num_clients, model_name):
+def make_plots(num_clients, model_name, client_fraction, json_output_path):
     server_config_path = server_folder_abs_path / "fl_config_server.json"
     with open(server_config_path, "r") as f:
         fl_config = json.load(f)
-    
+
     training_algo   = fl_config["training_algo"]
     num_epochs      = fl_config["num_epochs"]
     learning_rate   = fl_config["learning_rate"]
     optimizer       = fl_config["optimizer"]
     batch_size      = fl_config["batch_size"]
     model_type      = fl_config["model_type"]
-    client_fraction = fl_config["client_fraction"]
-    
+
     metric_plots_dir = server_folder_abs_path / "metric_plots"
     metric_plots_dir.mkdir(parents=True, exist_ok=True)
 
     loss_list = losses[model_name]
     accuracy_list = accuracies[model_name]
 
+    # Save loss and accuracy plots for current model
     fig, axes = plt.subplots(1, 2, figsize=(14, 6))
 
-    # Plot Loss
     sns.lineplot(ax=axes[0], x=range(len(loss_list)), y=loss_list, label="Loss", color="steelblue")
-    axes[0].set_title(f"Loss Curve")
+    axes[0].set_title("Loss Curve")
     axes[0].set_xlabel("Round")
     axes[0].set_ylabel("Loss")
     axes[0].legend()
     axes[0].grid(True)
 
-    # Plot Accuracy
     sns.lineplot(ax=axes[1], x=range(len(accuracy_list)), y=accuracy_list, label="Accuracy", color="darkorange")
-    axes[1].set_title(f"Accuracy Curve")
+    axes[1].set_title("Accuracy Curve")
     axes[1].set_xlabel("Round")
     axes[1].set_ylabel("Accuracy (%)")
     axes[1].legend()
     axes[1].grid(True)
 
-    # Adjust layout and save
-    plt.suptitle(f"Federated Learning Metrics\nModel Type: {model_type} | Algorithm: {training_algo} | Rounds (Server): {len(loss_list)}\n \
-                    Epochs (Client): {num_epochs} | Learning Rate = {learning_rate} | Optimizer = {optimizer}\n \
-                    Batch Size = {batch_size} | Client Frac = {client_fraction} | # Clients: {num_clients}", fontsize=16)
+    plt.suptitle(
+        f"Federated Learning Metrics\nModel Type: {model_type} | Algorithm: {training_algo} | Rounds (Server): {len(loss_list)}\n"
+        f"Epochs (Client): {num_epochs} | Learning Rate = {learning_rate} | Optimizer = {optimizer}\n"
+        f"Batch Size = {batch_size} | Client Frac = {client_fraction} | # Clients: {num_clients}",
+        fontsize=16
+    )
     plt.tight_layout()
     plt.savefig(metric_plots_dir / f"{model_type}_{training_algo}_{num_clients}_metrics.png", dpi=300)
     plt.close(fig)
 
+    # Plot all model losses and accuracies
     fig, axes = plt.subplots(1, 2, figsize=(14, 6))
-    for model_name, _ in losses.items():
+    for model_name_iter, _ in losses.items():
         try:
-            loss_list = losses[model_name]
-            accuracy_list = accuracies[model_name]
+            loss_list = losses[model_name_iter]
+            accuracy_list = accuracies[model_name_iter]
         except:
             continue
 
-        sns.lineplot(ax=axes[0], x=range(len(loss_list)), y=loss_list, label=model_name)
-        axes[0].set_xlabel("Round")
-        axes[0].set_ylabel("Loss")
-        axes[0].set_title(f"Loss Curve for Different Models")
-        axes[0].legend()
-        axes[0].grid(True)
+        sns.lineplot(ax=axes[0], x=range(len(loss_list)), y=loss_list, label=model_name_iter)
+        sns.lineplot(ax=axes[1], x=range(len(accuracy_list)), y=accuracy_list, label=model_name_iter)
 
-        sns.lineplot(ax=axes[1], x=range(len(accuracy_list)), y=accuracy_list, label=model_name)
-        axes[1].set_title(f"Accuracy Curve for Different Models")
-        axes[1].set_xlabel("Round")
-        axes[1].set_ylabel("Accuracy (%)")
-        axes[1].legend()
-        axes[1].grid(True)
+    axes[0].set_xlabel("Round")
+    axes[0].set_ylabel("Loss")
+    axes[0].set_title("Loss Curve for Different Models")
+    axes[0].legend()
+    axes[0].grid(True)
 
-    plt.suptitle(f"Loss & Accuracy Curves for Different Models")
+    axes[1].set_title("Accuracy Curve for Different Models")
+    axes[1].set_xlabel("Round")
+    axes[1].set_ylabel("Accuracy (%)")
+    axes[1].legend()
+    axes[1].grid(True)
+
+    plt.suptitle("Loss & Accuracy Curves for Different Models")
+    plt.tight_layout()
     plt.savefig(metric_plots_dir / f"loss_curve_all_models.png", dpi=300)
     plt.close(fig)
+
+    # Append data to output JSON
+    result_entry = {
+        "model_name": model_name,
+        "model_type": model_type,
+        "training_algo": training_algo,
+        "num_clients": num_clients,
+        "client_fraction": client_fraction,
+        "num_epochs": num_epochs,
+        "learning_rate": learning_rate,
+        "optimizer": optimizer,
+        "batch_size": batch_size,
+        "num_rounds": len(losses[model_name]),
+        "losses": losses[model_name],
+        "accuracies": accuracies[model_name]
+    }
+
+    # Read existing data (if any) and append
+    if os.path.exists(json_output_path):
+        with open(json_output_path, "r") as f:
+            try:
+                existing_data = json.load(f)
+                if not isinstance(existing_data, list):
+                    existing_data = [existing_data]
+            except json.JSONDecodeError:
+                existing_data = []
+    else:
+        existing_data = []
+
+    existing_data.append(result_entry)
+
+    with open(json_output_path, "w") as f:
+        json.dump(existing_data, f, indent=4)
 
 
 # ============================= MAIN =============================
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Federated Learning Server")
     parser.add_argument("--port", type=int, default=50051, help="Port Number for FL Server")
+    parser.add_argument("--encrypt", type=int, default=0, help="Enable encryption (1) or not (0)")
     args = parser.parse_args()
 
+    global encrypt
+    encrypt = args.encrypt
     my_port = args.port
     my_ip = get_ip()
 

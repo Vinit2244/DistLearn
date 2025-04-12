@@ -1,0 +1,10 @@
+DiabetesMLP (FedSGD):
+    Batch size = 64
+    Communication rounds = 15
+    Learning rate = 0.001
+
+DiabetesMLP (FedAvg):
+    Batch size = 64
+    Epochs = 2 (Internal)
+    Communication rounds = 15
+    Learning rate = 0.001
