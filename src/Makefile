@@ -3,10 +3,10 @@ OUT_DIR=generated
 
 # Allow overriding with certain cmd line args
 SERVER_PORT ?= 50051
-IID ?= 7
-NonIID ?= 0
-x ?= 1
-ENCRYPT ?= 1
+IID ?= 20 # Number of IID clients
+NonIID ?= 0 # Number of Non IID clients
+x ?= 1 # Number of classes to each Non IID
+ENCRYPT ?= 1 # 1 for encryption, 0 for no encryption
 
 # Find all .proto files in the proto directory
 PROTO_FILES=$(wildcard $(PROTO_DIR)/*.proto)
@@ -55,8 +55,6 @@ kill_clients:
 
 clean:
 	@$(MAKE) kill_clients
-	- rm -rf $(OUT_DIR)/*_pb2.py*
-	- rm -rf $(OUT_DIR)/*_pb2_grpc.py*
 	- find . -name "__pycache__" -type d -exec rm -rf {} +
 	- rm -rf clients
 	- rm -rf server/logs

@@ -689,7 +689,8 @@ def menu():
         print("  1. Transfer File")
         print("  2. Initialize Federated Learning")
         print("  3. Start Federated Training")
-        print("  4. Exit")
+        print("  4. Clear Loss and Accuracy Data")
+        print("  5. Exit")
         print()
         choice = input(f"{STYLES.FG_YELLOW}Enter your choice: {STYLES.RESET}")
         
@@ -814,9 +815,16 @@ def menu():
                 continue
                 
             fl_server.start_federated_training(num_rounds, client_fraction)
-            wait_for_enter()          
-        
+            wait_for_enter()    
+            
         elif choice == "4":
+            # Clear loss and accuracy arrays
+            losses.clear()
+            accuracies.clear()
+            print(f"{STYLES.FG_GREEN}Loss and accuracy arrays cleared!{STYLES.RESET}")
+            wait_for_enter()      
+        
+        elif choice == "5":
             break
 
         else:

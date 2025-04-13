@@ -5,3 +5,13 @@ __pycache__
 *.pth
 data/fashion_mnist_dataset.csv
 data/mnist_dataset.csv
+z_plots_final
+src/server/metrics.json
+src/clients
+src/server/metric_plots
+src/hyperparams.txt
+src/setup/data_distribution_plots
+src/client_pids.txt
+src/server/data
+*.log
+src/server/received_files
