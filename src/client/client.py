@@ -302,8 +302,8 @@ class ClientServicer(file_transfer_grpc.ClientServicer):
                     f.write(chunk.chunk)
                     total_chunks += 1
                     total_bytes += len(chunk.chunk)
-                    logging.info(f"Received chunk {total_chunks} of {len(chunk.chunk)} bytes")
                     if chunk.is_last_chunk:
+                        logging.info(f"Received chunk {total_chunks} of {len(chunk.chunk)} bytes")
                         break
             
             logging.info(f"File transfer completed. Total chunks: {total_chunks}, Total bytes: {total_bytes}")

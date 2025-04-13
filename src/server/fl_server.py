@@ -94,6 +94,7 @@ class FLServer:
 
         self.register_with_consul()
         self.start_server()
+        self.initially_selected_clients = []
     
     def register_with_consul(self):
         data = {
@@ -259,6 +260,7 @@ class FLServer:
             logging.info(f"Sending configuration and model to client {client_id}")
             self.send_file_to_client(config_path, client_id)
             self.send_file_to_client(model_path, client_id)
+        self.initially_selected_clients = selected_clients
 
     def start_federated_training(self, num_rounds, client_fraction):
         try:
@@ -319,15 +321,48 @@ class FLServer:
                         return client_id, None
                     
                 # Select clients
-                num_clients = len(self.clients)
+                num_clients = len(self.initially_selected_clients)
                 num_selected = max(1, int(client_fraction * num_clients))
-                selected_clients = random.sample(list(self.clients.keys()), num_selected)
+                selected_clients = random.sample(self.initially_selected_clients, num_selected)
+                print(f"{STYLES.FG_CYAN}Selected {num_selected}/{num_clients} clients for training.{STYLES.RESET}")
+
 
                 file_size_bytes = initial_weights_path.stat().st_size
                 file_size_mb = file_size_bytes / (1024 * 1024)   
 
                 client_responses = []
                 total_samples = 0
+                
+                # FedModCS
+                if training_algo == training_algos[3]:
+                    # If FedModCS, request resource info from all clients
+                    client_resource_info = {}
+                    logging.info("Training algorithm is FedModCS: Requesting resource info from all clients.")
+                    for client_id in selected_clients:
+                        try:
+                            client_ip, client_port = self.clients[client_id]
+                            with ClientSessionManager(client_id, client_ip, client_port) as stub:
+                                response = stub.GetResourceInfo(empty_pb2.Empty())
+                                info = {
+                                    "dataset_size": response.dataset_size,
+                                    "cpu_speed_factor": response.cpu_speed_factor,
+                                    "network_bandwidth": response.network_bandwidth,
+                                    "has_gpu": response.has_gpu
+                                }
+                                client_resource_info[client_id] = info
+                                logging.info(f"Client {client_id} resource info: {info}")
+                        except Exception as e:
+                            logging.error(f"Failed to get resource info from client {client_id}: {e}")
+                            
+                    selected_clients = self.select_clients_fedmodcs(client_resource_info, round_id, selected_clients, file_size_mb)
+                    num_selected = len(selected_clients)
+                    print(f"{STYLES.FG_CYAN}Selected {num_selected}/{num_clients} clients for training after FedModCS.{STYLES.RESET}")
+                
+                    if num_selected == 0:
+                        print(f"{STYLES.BG_RED}No clients selected for this round according to FedMODCS. Going for random selection...{STYLES.RESET}")
+                        num_clients = len(self.clients)
+                        num_selected = max(1, int(client_fraction * num_clients))
+                        selected_clients = random.sample(list(self.clients.keys()), num_selected)
 
                 # Parallelize client training
                 with concurrent.futures.ThreadPoolExecutor(max_workers=num_selected) as executor:
@@ -378,37 +413,7 @@ class FLServer:
                             if name not in avg_weights:
                                 avg_weights[name] = param * psi_arr[idx]
                             else:
-                                avg_weights[name] += param * psi_arr[idx]               
-                
-                # FedModCS
-                elif training_algo == training_algos[3]:
-                    # If FedModCS, request resource info from all clients
-                    client_resource_info = {}
-                    logging.info("Training algorithm is FedModCS: Requesting resource info from all clients.")
-                    for client_id in self.clients:
-                        try:
-                            client_ip, client_port = self.clients[client_id]
-                            with ClientSessionManager(client_id, client_ip, client_port) as stub:
-                                response = stub.GetResourceInfo(empty_pb2.Empty())
-                                info = {
-                                    "dataset_size": response.dataset_size,
-                                    "cpu_speed_factor": response.cpu_speed_factor,
-                                    "network_bandwidth": response.network_bandwidth,
-                                    "has_gpu": response.has_gpu
-                                }
-                                client_resource_info[client_id] = info
-                                logging.info(f"Client {client_id} resource info: {info}")
-                        except Exception as e:
-                            logging.error(f"Failed to get resource info from client {client_id}: {e}")
-                            
-                    selected_clients = self.select_clients_fedmodcs(client_resource_info, round_id, selected_clients, file_size_mb)
-                    num_selected = len(selected_clients)
-                
-                    if num_selected == 0:
-                        print(f"{STYLES.BG_RED}No clients selected for this round according to FedMODCS. Going for random selection...{STYLES.RESET}")
-                        num_clients = len(self.clients)
-                        num_selected = max(1, int(client_fraction * num_clients))
-                        selected_clients = random.sample(list(self.clients.keys()), num_selected)                        
+                                avg_weights[name] += param * psi_arr[idx]                                 
 
                 # FedSGD and FedAvg
                 else:
@@ -516,7 +521,7 @@ class FLServer:
         # System parameters
         T_cs = 0.0  # Client selection time
         T_agg = 0.0  # Aggregation time
-        T_round = 300  # Maximum round time constraint (3 minutes in paper)
+        T_round = 100  # Maximum round time constraint (3 minutes in paper)
         T_s_empty = 0.0  # Initial synchronization time
         
         K_prime = randomly_selected_clients.copy()  # Randomly selected clients
@@ -656,8 +661,8 @@ class FLServerServicer(file_transfer_grpc.FLServerServicer):
                     f.write(chunk.chunk)
                     total_chunks += 1
                     total_bytes += len(chunk.chunk)
-                    logging.info(f"Received chunk {total_chunks} of {len(chunk.chunk)} bytes")
                     if chunk.is_last_chunk:
+                        logging.info(f"Received last chunk {total_chunks} of {len(chunk.chunk)} bytes")
                         break
             
             logging.info(f"File transfer completed. Total chunks: {total_chunks}, Total bytes: {total_bytes}")
