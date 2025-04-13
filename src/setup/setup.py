@@ -25,7 +25,8 @@ def create_folders_and_distribute_data(n, IID, NonIID, x, data_folder=setup_fold
                                        server_certificate=setup_folder_abs_path / "../server/certs/server.crt",
                                        ca_certificate=setup_folder_abs_path / "../CA/ca.crt",
                                        test_data_fraction=0.1,
-                                       num_data_points=3000):
+                                       num_data_points=1500,
+                                       num_data_points_diabetes=400):
     # Create clients and server_data folders
     clients_folder.mkdir(parents=True, exist_ok=True)
     server_data_folder.mkdir(parents=True, exist_ok=True)
@@ -96,11 +97,16 @@ def create_folders_and_distribute_data(n, IID, NonIID, x, data_folder=setup_fold
         test_data.to_csv(server_data_folder / dataset_file, index=False)
         
         if dataset_file == 'diabetes_dataset.csv':
-            # Split the remaining data equally among the clients
-            client_data_splits = np.array_split(train_data, n)
-            for i, client_data in enumerate(client_data_splits, start=1):
+            # # Split the remaining data equally among the clients
+            # client_data_splits = np.array_split(train_data, n)
+            # for i, client_data in enumerate(client_data_splits, start=1):
+            #     client_data_folder = clients_folder / str(i) / "data"
+            #     client_data.to_csv(client_data_folder / dataset_file, index=False)
+            for i in range(1, n + 1):
+                client_sample = train_data.sample(n=num_data_points_diabetes, random_state=42 + i)
                 client_data_folder = clients_folder / str(i) / "data"
-                client_data.to_csv(client_data_folder / dataset_file, index=False)
+                client_sample.to_csv(client_data_folder / dataset_file, index=False)
+            
         else:
             # Identify label column and unique classes in the dataset
             label_column = data.columns[-1]
