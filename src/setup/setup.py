@@ -97,11 +97,6 @@ def create_folders_and_distribute_data(n, IID, NonIID, x, data_folder=setup_fold
         test_data.to_csv(server_data_folder / dataset_file, index=False)
         
         if dataset_file == 'diabetes_dataset.csv':
-            # # Split the remaining data equally among the clients
-            # client_data_splits = np.array_split(train_data, n)
-            # for i, client_data in enumerate(client_data_splits, start=1):
-            #     client_data_folder = clients_folder / str(i) / "data"
-            #     client_data.to_csv(client_data_folder / dataset_file, index=False)
             for i in range(1, n + 1):
                 client_sample = train_data.sample(n=num_data_points_diabetes, random_state=42 + i)
                 client_data_folder = clients_folder / str(i) / "data"
@@ -110,22 +105,20 @@ def create_folders_and_distribute_data(n, IID, NonIID, x, data_folder=setup_fold
         else:
             # Identify label column and unique classes in the dataset
             label_column = data.columns[-1]
-            unique_classes = np.unique(train_data[label_column])
+            sorted_data = train_data.sort_values(by=label_column)
+            total_shards = n * x
+            shard_size = num_data_points // x
+            shards = [sorted_data.iloc[i * shard_size: (i + 1) * shard_size] for i in range(total_shards)]
+            rng = np.random.RandomState(42)
+            shard_indices = rng.permutation(total_shards)
             
             for i in range(1, n + 1):
                 if i <= IID:
                     client_sample = train_data.sample(n=num_data_points, random_state=42 + i)
                 else:
-                    # Non-IID: randomly select a single class for this client.
-                    selected_class = np.random.choice(unique_classes)
-                    subset = train_data[train_data[label_column] == selected_class]
-
-                    replace_flag = len(subset) < num_data_points
-                    client_sample = subset.sample(n=num_data_points, replace=replace_flag, random_state=42 + i)
+                    client_shards = [shards[shard_indices[(i - 1) * x + j]] for j in range(x)]
+                    client_sample = pd.concat(client_shards)
                 
-                client_data_folder = clients_folder / str(i) / "data"
-                client_sample.to_csv(client_data_folder / dataset_file, index=False)
-                    
                 client_data_folder = clients_folder / str(i) / "data"
                 client_sample.to_csv(client_data_folder / dataset_file, index=False)
 

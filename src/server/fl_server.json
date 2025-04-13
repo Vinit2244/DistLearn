@@ -1,1 +1,0 @@
-{"service": {"name": "fl-server", "id": "fl", "port": 50051, "check": {"http": "http://localhost:50051/health", "interval": "2s"}}}
