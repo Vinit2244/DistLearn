@@ -1,1 +1,1 @@
-{"num_epochs": 3, "learning_rate": 0.001, "optimizer": "Adam", "batch_size": 32, "model_type": "FashionMNISTCNN"}
+{"num_epochs": 1, "learning_rate": 0.001, "optimizer": "Adam", "batch_size": 32, "model_type": "DiabetesMLP"}

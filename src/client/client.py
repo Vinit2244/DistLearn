@@ -321,6 +321,30 @@ class ClientServicer(file_transfer_grpc.ClientServicer):
             )
 
     def StartTraining(self, request, context):
+        sys.path.append(str(client_folder_abs_path / "received_files"))
+        model_type = request.model_type
+        if model_type not in ["DiabetesMLP", "FashionMNISTCNN", "MNISTMLP"]:
+            raise ValueError(f"Unsupported model type: {model_type}")
+        logging.info(f"Received training request for model type: {model_type}")
+
+        if model_type == "DiabetesMLP":
+            global DiabetesMLP, DiabetesDataset, train_diabetes_model, get_diabetes_optimizer
+            from DiabetesMLP import DiabetesMLP, DiabetesDataset, train_model as train_diabetes_model, get_optimizer as get_diabetes_optimizer
+            model = DiabetesMLP(input_size=DIABETES_MLP_INPUT_SIZE)
+        elif model_type == "FashionMNISTCNN":
+            global FashionMNISTCNN, FashionMNISTDataset, train_fashion_mnist_model, get_fashion_mnist_optimizer
+            from FashionMNISTCNN import FashionMNISTCNN, FashionMNISTDataset, train_model as train_fashion_mnist_model, get_optimizer as get_fashion_mnist_optimizer
+            model = FashionMNISTCNN()
+        elif model_type == "MNISTMLP":
+            global MNISTMLP, MNISTDataset, train_mnist_model, get_mnist_optimizer
+            from MNISTMLP import MNISTMLP, MNISTDataset, train_model as train_mnist_model, get_optimizer as get_mnist_optimizer
+            model = MNISTMLP()
+        else:
+            raise ValueError(f"Unsupported model type: {model_type}")
+        
+        save_path = client_folder_abs_path / "models"
+        save_path.mkdir(exist_ok=True)
+        
         try:
             # Extract training parameters from request
             round_id = request.round_id

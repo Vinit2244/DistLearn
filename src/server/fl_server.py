@@ -311,7 +311,8 @@ class FLServer:
                                 round_id=round_id,
                                 model_version="1.0",
                                 local_epochs=fl_config["num_epochs"],
-                                model_path = str(model_weights_path.name)
+                                model_path = str(model_weights_path.name),
+                                model_type = model_type
                             ))
 
                             return client_id, response

@@ -60,6 +60,7 @@ message TrainingRequest {
     string model_version = 2;
     string model_path = 3;
     int32 local_epochs = 4;
+    string model_type = 5;
 }
 
 // Response from client after training
