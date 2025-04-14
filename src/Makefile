@@ -3,10 +3,12 @@ OUT_DIR=generated
 
 # Allow overriding with certain cmd line args
 SERVER_PORT ?= 50051
-IID ?= 10 # Number of IID clients
-NonIID ?= 0 # Number of Non IID clients
+IID ?= 3 # Number of IID clients
+NonIID ?= 7 # Number of Non IID clients
 x ?= 1 # Number of classes to each Non IID
 ENCRYPT ?= 1 # 1 for encryption, 0 for no encryption
+num_data_points ?= 600 # Number of data points per client
+num_data_points_diabetes ?= 400 # Number of data points per client for diabetes
 
 # Find all .proto files in the proto directory
 PROTO_FILES=$(wildcard $(PROTO_DIR)/*.proto)
@@ -27,10 +29,10 @@ start_server:
 	python3 server/fl_server.py --port=$(SERVER_PORT) --encrypt=$(ENCRYPT)
 
 do_setup:
-	python3 setup/setup.py --num_clients=$$(($(IID) + $(NonIID))) --IID=$(IID) --NonIID=$(NonIID) --x=$(x)
+	python3 setup/setup.py --num_clients=$$(($(IID) + $(NonIID))) --IID=$(IID) --NonIID=$(NonIID) --x=$(x) --num_data_points=$(num_data_points) --num_data_points_diabetes=$(num_data_points_diabetes)
 
 do_setup_and_visualise:
-	python3 setup/setup.py --num_clients=$$(($(IID) + $(NonIID))) --visualize_initial --visualize_distributed --IID=$(IID) --NonIID=$(NonIID) --x=$(x)
+	python3 setup/setup.py --num_clients=$$(($(IID) + $(NonIID))) --visualize_initial --visualize_distributed --IID=$(IID) --NonIID=$(NonIID) --x=$(x) --num_data_points=$(num_data_points) --num_data_points_diabetes=$(num_data_points_diabetes)
 
 start_clients:
 	@for i in $(shell seq 1 $$(($(IID) + $(NonIID)))); do \

@@ -25,7 +25,7 @@ def create_folders_and_distribute_data(n, IID, NonIID, x, data_folder=setup_fold
                                        server_certificate=setup_folder_abs_path / "../server/certs/server.crt",
                                        ca_certificate=setup_folder_abs_path / "../CA/ca.crt",
                                        test_data_fraction=0.1,
-                                       num_data_points=100,
+                                       num_data_points=1500,
                                        num_data_points_diabetes=400):
     # Create clients and server_data folders
     clients_folder.mkdir(parents=True, exist_ok=True)
@@ -263,9 +263,12 @@ if __name__ == "__main__":
     argparser.add_argument('--IID', type=int, required=True, help="Number of IID clients")
     argparser.add_argument('--NonIID', type=int, required=True, help="Number of Non-IID clients")
     argparser.add_argument('--x', type=int, required=True, help="Number of classes at the Non-IID clients")
+    argparser.add_argument('--num_data_points', type=int, default=1500, help="Number of data points per client")
+    argparser.add_argument('--num_data_points_diabetes', type=int, default=400, help="Number of data points for diabetes dataset")
     
     args = argparser.parse_args()
-    create_folders_and_distribute_data(n=args.num_clients, IID=args.IID, NonIID=args.NonIID, x=args.x)
+    create_folders_and_distribute_data(n=args.num_clients, IID=args.IID, NonIID=args.NonIID, x=args.x, 
+                                       num_data_points=args.num_data_points, num_data_points_diabetes=args.num_data_points_diabetes)
     
     if args.visualize_initial:
         visualize_initial_data()

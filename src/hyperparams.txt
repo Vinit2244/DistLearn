@@ -66,3 +66,15 @@ FashionMNISTCNN (FedAvg):
     Client Fraction = 1
 
     Total time taken: 3271.16 seconds
+
+---
+
+MNISTMLP (FedAdp):
+    Batch size = 32
+    Communication rounds = 15
+    Learning rate = 0.001
+    Num Clients = 10
+    Num Data Points per Client = 1500
+    Client Fraction = 1
+    
+    Total time taken: 589.16 seconds
