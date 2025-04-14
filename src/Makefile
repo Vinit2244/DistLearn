@@ -3,9 +3,9 @@ OUT_DIR=generated
 
 # Allow overriding with certain cmd line args
 SERVER_PORT ?= 50051
-IID ?= 5 # Number of IID clients
-NonIID ?= 5 # Number of Non IID clients
-x ?= 2 # Number of classes to each Non IID
+IID ?= 10 # Number of IID clients
+NonIID ?= 0 # Number of Non IID clients
+x ?= 1 # Number of classes to each Non IID
 ENCRYPT ?= 1 # 1 for encryption, 0 for no encryption
 
 # Find all .proto files in the proto directory

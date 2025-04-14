@@ -25,7 +25,7 @@ def create_folders_and_distribute_data(n, IID, NonIID, x, data_folder=setup_fold
                                        server_certificate=setup_folder_abs_path / "../server/certs/server.crt",
                                        ca_certificate=setup_folder_abs_path / "../CA/ca.crt",
                                        test_data_fraction=0.1,
-                                       num_data_points=1500,
+                                       num_data_points=100,
                                        num_data_points_diabetes=400):
     # Create clients and server_data folders
     clients_folder.mkdir(parents=True, exist_ok=True)
