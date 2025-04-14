@@ -32,7 +32,7 @@ from DiabetesMLP import DiabetesMLP, evaluate_model as evaluate_diabetes_model
 from FashionMNISTCNN import FashionMNISTCNN, evaluate_model as evaluate_fashion_mnist_model
 from MNISTMLP import MNISTMLP, evaluate_model as evaluate_mnist_model
 
-sns.set(style="whitegrid", context="talk")
+sns.set_theme(style="whitegrid", context="talk")
 
 os.environ["GRPC_VERBOSITY"] = "ERROR"
 os.environ["GRPC_TRACE"] = ""
@@ -198,14 +198,15 @@ class FLServer:
                 print(f"{STYLES.BG_RED + STYLES.FG_WHITE}Error: {response.msg}{STYLES.RESET}")
                 return 1
 
-    def initialize_fl(self, training_algo, num_epochs, learning_rate, optimizer, batch_size, model_type, client_fraction):
+    def initialize_fl(self, training_algo, num_epochs, learning_rate, optimizer, batch_size, model_type, client_fraction, lr_decay=0.995):
         fl_config_server = {
             "training_algo":    training_algo,
             "num_epochs":       num_epochs,
             "learning_rate":    learning_rate,
             "optimizer":        optimizer,
             "batch_size":       batch_size,
-            "model_type":       model_type
+            "model_type":       model_type,
+            "lr_decay":         lr_decay
         }
 
         fl_config_client = {
@@ -213,7 +214,8 @@ class FLServer:
             "learning_rate":    learning_rate,
             "optimizer":        optimizer,
             "batch_size":       batch_size,
-            "model_type":       model_type
+            "model_type":       model_type,
+            "lr_decay":         lr_decay
         }
 
         config_path = server_folder_abs_path / "fl_config_server.json"
@@ -272,6 +274,7 @@ class FLServer:
             model_type      = fl_config["model_type"]
             lr              = fl_config["learning_rate"]
             optimizer       = fl_config["optimizer"]
+            lr_decay       = fl_config["lr_decay"]
 
             # Initialize the appropriate model
             if model_type == model_types[0]:
@@ -388,15 +391,20 @@ class FLServer:
 
                 # FedAdp
                 if training_algo == training_algos[2]:
+                    response_order = []
                     for response in client_responses:
                         client_model_path = server_folder_abs_path / f"received_files/{response.client_id}/round_{round_id}_trained.pt"
                         client_state_dict = torch.load(client_model_path, map_location="cpu")
                         client_weights = np.astype(torch.cat([v.flatten() for v in client_state_dict.values()]).numpy(), np.float32)
                         weights_of_all_clients.append(client_weights)
                         num_samples_arr.append(response.samples_processed)
+                        response_order.append(response.client_id)
                     
                     weights_of_all_clients = np.array(weights_of_all_clients)
                     num_samples_arr = np.array(num_samples_arr)
+
+                    # Calculate decayed learning rate
+                    lr = fl_config["learning_rate"] / (1 + lr_decay * round_id)
 
                     theta_arr = self.get_theta_arr(weights_of_all_clients, num_samples_arr, round_id, initial_weights_path, lr)
                     if round_id == 0:
@@ -404,6 +412,32 @@ class FLServer:
                     else:
                         smoothed_theta_arr = (round_id * smoothed_theta_arr + theta_arr) / (round_id + 1)
                     psi_arr = self.get_psi_arr(smoothed_theta_arr, num_samples_arr)
+                    psi_list = psi_arr.tolist()
+
+                    # File path
+                    json_file = 'psi_data.json'
+
+                    # Load existing data or start fresh
+                    if os.path.exists(json_file):
+                        with open(json_file, 'r') as f:
+                            data = json.load(f)
+                    else:
+                        data = []
+
+                    # Append new data
+                    # Sort response order and correspondingly sort psi_list
+                    sorted_indices = sorted(range(len(response_order)), key=lambda k: response_order[k])
+                    response_order = [response_order[i] for i in sorted_indices]
+                    psi_list = [psi_list[i] for i in sorted_indices]
+
+                    data.append({
+                        "psi_list": psi_list,
+                        "response_order": response_order
+                    })
+
+                    # Write back to JSON file
+                    with open(json_file, 'w') as f:
+                        json.dump(data, f, indent=2)
 
                     for idx, response in enumerate(client_responses):
                         client_model_path = server_folder_abs_path / f"received_files/{response.client_id}/round_{round_id}_trained.pt"
@@ -844,6 +878,7 @@ def make_plots(num_clients, model_name, client_fraction, json_output_path):
     optimizer       = fl_config["optimizer"]
     batch_size      = fl_config["batch_size"]
     model_type      = fl_config["model_type"]
+    lr_decay        = fl_config["lr_decay"]
 
     metric_plots_dir = server_folder_abs_path / "metric_plots"
     metric_plots_dir.mkdir(parents=True, exist_ok=True)
@@ -871,7 +906,7 @@ def make_plots(num_clients, model_name, client_fraction, json_output_path):
     plt.suptitle(
         f"Federated Learning Metrics\nModel Type: {model_type} | Algorithm: {training_algo} | Rounds (Server): {len(loss_list)}\n"
         f"Epochs (Client): {num_epochs} | Learning Rate = {learning_rate} | Optimizer = {optimizer}\n"
-        f"Batch Size = {batch_size} | Client Frac = {client_fraction} | # Clients: {num_clients}",
+        f"Batch Size = {batch_size} | Client Frac = {client_fraction} | # Clients: {num_clients} | LR Decay: {lr_decay}",
         fontsize=16
     )
     plt.tight_layout()

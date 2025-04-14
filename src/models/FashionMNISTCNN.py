@@ -16,7 +16,7 @@ class FashionMNISTDataset(Dataset):
         self.images = df.drop('label', axis=1).values
         
         # Normalize and reshape images
-        self.images = self.images / 255.0  # Scale to [0, 1]
+        self.images = self.images / 1.0  # Scale to [0, 1]
         self.images = self.images.reshape(-1, 1, 28, 28)  # Reshape to (N, C, H, W)
         
         # Convert to tensors

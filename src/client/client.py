@@ -184,6 +184,7 @@ class Client:
             learning_rate   = config.get("learning_rate")
             num_epochs      = config.get("num_epochs")
             batch_size      = config.get("batch_size")
+            lr_decay        = config.get("lr_decay")
             
             # Initialize the model based on model_type
             if model_type == "DiabetesMLP":
@@ -367,6 +368,7 @@ class ClientServicer(file_transfer_grpc.ClientServicer):
             optimizer_type = config.get("optimizer")
             learning_rate = config.get("learning_rate")
             batch_size = config.get("batch_size")
+            lr_decay = config.get("lr_decay")
 
             # Initialize the model based on model_type
             if model_type == "DiabetesMLP":
@@ -381,6 +383,11 @@ class ClientServicer(file_transfer_grpc.ClientServicer):
             # Load the model
             model.load_state_dict(torch.load(model_path))
             logging.info(f"Model weights loaded from {model_path}")
+
+            # Calculate the decayed learning rate
+            if lr_decay > 0:
+                learning_rate *= (1 / (1 + lr_decay * round_id))
+                logging.info(f"Learning rate decayed to {learning_rate}")
 
             # Initialize the model based on model_type
             if model_type == "DiabetesMLP":

@@ -69,12 +69,93 @@ FashionMNISTCNN (FedAvg):
 
 ---
 
-MNISTMLP (FedAdp):
-    Batch size = 32
-    Communication rounds = 15
+Params for IID/Non-IID Abalation (FashionMNIST)
+FashionMNIST(FedAdp):
+    Communication Rounds = 20
     Learning rate = 0.001
-    Num Clients = 10
-    Num Data Points per Client = 1500
+    Num Clients = 8 (IID) + 2 (Non-IID)
+    Num of Data Points per Client = 600
     Client Fraction = 1
-    
-    Total time taken: 589.16 seconds
+
+    Total Time Taken = 418.57 seconds
+
+FashionMNIST(FedAvg):
+    Communication Rounds = 20
+    Learning rate = 0.001
+    Num Clients = 8 (IID) + 2 (Non-IID)
+    Num of Data Points per Client = 600
+    Client Fraction = 1
+
+    Total Time Taken = 437.93 second
+
+FashionMNIST(FedAdp):
+    Communication Rounds = 20
+    Learning rate = 0.001
+    Num Clients = 6 (IID) + 4 (Non-IID)
+    Num of Data Points per Client = 600
+    Client Fraction = 1
+
+    Total Time Taken = 
+
+FashionMNIST(FedAvg):
+    Communication Rounds = 20
+    Learning rate = 0.001
+    Num Clients = 6 (IID) + 4 (Non-IID)
+    Num of Data Points per Client = 600
+    Client Fraction = 1
+
+    Total Time Taken = 
+
+FashionMNIST(FedAdp):
+    Communication Rounds = 20
+    Learning rate = 0.001
+    Num Clients = 5 (IID) + 5 (Non-IID)
+    Num of Data Points per Client = 600
+    Client Fraction = 1
+
+    Total Time Taken = 
+
+FashionMNIST(FedAvg):
+    Communication Rounds = 20
+    Learning rate = 0.001
+    Num Clients = 5 (IID) + 5 (Non-IID)
+    Num of Data Points per Client = 600
+    Client Fraction = 1
+
+    Total Time Taken = 
+
+FashionMNIST(FedAdp):
+    Communication Rounds = 20
+    Learning rate = 0.001
+    Num Clients = 4 (IID) + 6 (Non-IID)
+    Num of Data Points per Client = 600
+    Client Fraction = 1
+
+    Total Time Taken = 
+
+FashionMNIST(FedAvg):
+    Communication Rounds = 20
+    Learning rate = 0.001
+    Num Clients = 4 (IID) + 6 (Non-IID)
+    Num of Data Points per Client = 600
+    Client Fraction = 1
+
+    Total Time Taken = 
+
+FashionMNIST(FedAdp):
+    Communication Rounds = 20
+    Learning rate = 0.001
+    Num Clients = 2 (IID) + 8 (Non-IID)
+    Num of Data Points per Client = 600
+    Client Fraction = 1
+
+    Total Time Taken = 
+
+FashionMNIST(FedAvg):
+    Communication Rounds = 20
+    Learning rate = 0.001
+    Num Clients = 2 (IID) + 8 (Non-IID)
+    Num of Data Points per Client = 600
+    Client Fraction = 1
+
+    Total Time Taken = 

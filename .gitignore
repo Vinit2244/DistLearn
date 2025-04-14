@@ -14,3 +14,4 @@ src/client_pids.txt
 src/server/data
 *.log
 src/server/received_files
+Ablations/FedAvgvsFedAdp
