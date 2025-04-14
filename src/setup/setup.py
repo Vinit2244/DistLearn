@@ -25,8 +25,9 @@ def create_folders_and_distribute_data(n, IID, NonIID, x, data_folder=setup_fold
                                        server_certificate=setup_folder_abs_path / "../server/certs/server.crt",
                                        ca_certificate=setup_folder_abs_path / "../CA/ca.crt",
                                        test_data_fraction=0.1,
-                                       num_data_points=1500,
-                                       num_data_points_diabetes=400):
+                                       num_data_points=100,
+                                       num_data_points_diabetes=400,
+                                       n_classes=10):
     # Create clients and server_data folders
     clients_folder.mkdir(parents=True, exist_ok=True)
     server_data_folder.mkdir(parents=True, exist_ok=True)
@@ -103,20 +104,22 @@ def create_folders_and_distribute_data(n, IID, NonIID, x, data_folder=setup_fold
                 client_sample.to_csv(client_data_folder / dataset_file, index=False)
             
         else:
-            # Identify label column and unique classes in the dataset
-            label_column = data.columns[-1]
-            sorted_data = train_data.sort_values(by=label_column)
-            total_shards = n * x
             shard_size = num_data_points // x
-            shards = [sorted_data.iloc[i * shard_size: (i + 1) * shard_size] for i in range(total_shards)]
-            rng = np.random.RandomState(42)
-            shard_indices = rng.permutation(total_shards)
-            
+
+            prev_label = -1
+
             for i in range(1, n + 1):
                 if i <= IID:
+                    # IID client: randomly sample from the entire dataset
                     client_sample = train_data.sample(n=num_data_points, random_state=42 + i)
                 else:
-                    client_shards = [shards[shard_indices[(i - 1) * x + j]] for j in range(x)]
+                    client_shards = []
+                    for j in range(x):
+                        next_label = (prev_label + 1) % n_classes
+                        shard = train_data[train_data['label'] == next_label]
+                        shard = shard.sample(n=shard_size, random_state=42 + i + j)
+                        client_shards.append(shard)
+                        prev_label = next_label
                     client_sample = pd.concat(client_shards)
                 
                 client_data_folder = clients_folder / str(i) / "data"

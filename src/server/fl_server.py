@@ -463,7 +463,7 @@ class FLServer:
                 print(f"{STYLES.FG_YELLOW}Loss: {round(loss, 4)}")
                 print(f"Accuracy: {round(acc, 4)}%{STYLES.RESET}")
 
-                model_name = f"{training_algo}_{model_type}_{optimizer}"
+                model_name = f"{training_algo}_{model_type}_{optimizer}_{client_fraction}"
 
                 # Store loss and accuracy for this round for plotting after training
                 if losses.get(model_name) is None:
