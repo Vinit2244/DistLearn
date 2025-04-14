@@ -244,8 +244,8 @@
         "num_epochs": 3,
         "learning_rate": 0.01,
         "optimizer": "Adam",
-        "batch_size": 64,
-        "num_rounds": 15,
+        "batch_size": 32,
+        "num_rounds": 10,
         "losses": [
             2.297901183908636,
             1.403253920511766,
