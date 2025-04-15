@@ -18,62 +18,6 @@ sns.set_theme(style="whitegrid", context="notebook", font_scale=1.2)
 PLOTS_DIR = setup_folder_abs_path / "data_distribution_plots"
 COLOR_PALETTE = "viridis"
 
-# def setup_client_capabilities(num_clients, capability_range = (10,100), bandwidth_range=(1,10), variation_percentage=20, clients_folder = setup_folder_abs_path / "../clients"):
-#     """Setup client capabilities with mean values randomly drawn from the given ranges
-#         and variations controlled by variation_percentage"""
-#     client_capabilities = {}
-#     mean_cap_list = []
-#     mean_bw_list = []
-#     has_gpu_list = []
-#     for client_id in range(num_clients):
-#         # Mean computation capability (samples/second)
-#         mean_capability = np.random.uniform(capability_range[0], capability_range[1])
-
-#         # Mean network bandwidth (MB/second)
-#         mean_bandwidth = np.random.uniform(bandwidth_range[0], bandwidth_range[1])
-        
-#         # GPU availability (10% of clients have GPU)
-#         has_gpu = np.random.random() < 0.1
-
-#         client_capabilities[client_id] = {
-#                 "mean_capability": mean_capability,
-#                 "mean_bandwidth": mean_bandwidth,
-#                 "has_gpu": has_gpu,
-#                 "variation_percentage": variation_percentage
-#             }
-        
-#         # For plotting
-#         mean_cap_list.append(mean_capability)
-#         mean_bw_list.append(mean_bandwidth)
-#         has_gpu_list.append(int(has_gpu))  # convert bool to 0/1 for plotting
-        
-#         # Write capabilities to clients folder
-#         client_folder = clients_folder / str(client_id + 1)
-#         client_cap_file = client_folder / "client_capabilities.json"
-#         with open(client_cap_file, "w") as f:
-#             json.dump(client_capabilities[client_id], f, indent=4)
-
-#          # Visualization
-#     client_ids = list(range(num_clients))
-#     fig, axs = plt.subplots(3, 1, figsize=(12, 10), sharex=True)
-
-#     axs[0].bar(client_ids, mean_cap_list, color='skyblue')
-#     axs[0].set_ylabel("Mean Capability (samples/sec)")
-#     axs[0].set_title("Client Capabilities")
-
-#     axs[1].bar(client_ids, mean_bw_list, color='lightgreen')
-#     axs[1].set_ylabel("Mean Bandwidth (MB/sec)")
-
-#     axs[2].bar(client_ids, has_gpu_list, color='salmon')
-#     axs[2].set_ylabel("Has GPU (1=True, 0=False)")
-#     axs[2].set_xlabel("Client ID")
-
-#     plt.tight_layout()
-#     plt.savefig(PLOTS_DIR / "client_capabilities.png", dpi=300, bbox_inches='tight', facecolor='white')
-#     plt.close()
-        
-#     return client_capabilities
-
 def setup_client_capabilities(
     num_clients,
     capability_range=(10, 100),

@@ -397,13 +397,13 @@ class FLServer:
 
                 model_weights_path = server_folder_abs_path / f"models/global_model_round_{round_id - 1}.pt" if round_id > 0 else initial_weights_path
                 global_state_dict = torch.load(model_weights_path, map_location="cpu")
-                global_w_prev = np.astype(torch.cat([v.flatten() for v in global_state_dict.values()]).numpy(), np.float32)
+                global_w_prev = torch.cat([v.flatten() for v in global_state_dict.values()]).numpy().astype(np.float32)
 
                 response_order = []
                 for response in client_responses:
                     client_model_path = server_folder_abs_path / f"received_files/{response.client_id}/round_{round_id}_trained.pt"
                     client_state_dict = torch.load(client_model_path, map_location="cpu")
-                    client_weights = np.astype(torch.cat([v.flatten() for v in client_state_dict.values()]).numpy(), np.float32)
+                    client_weights = torch.cat([v.flatten() for v in client_state_dict.values()]).numpy().astype(np.float32)
                     weights_of_all_clients.append(client_weights)
                     weight_updates_of_all_clients.append(client_weights - global_w_prev)
                     num_samples_arr.append(response.samples_processed)
@@ -461,11 +461,6 @@ class FLServer:
                         global_weight_update += client_weight * psi_arr[idx]
                     updated_global_weights = global_weight_update
 
-                    # Weighing weight updates
-                    # for i, client_weight_update in enumerate(weight_updates_of_all_clients):
-                    #     global_weight_update += client_weight_update * psi_arr[i]
-                    # updated_global_weights = global_w_prev + global_weight_update
-
                 # FedSGD and FedAvg
                 else:
                     # Aggregate client updates (Federated Averaging)
@@ -475,11 +470,6 @@ class FLServer:
                     for idx, client_weight in enumerate(weights_of_all_clients):
                         global_weight_update += client_weight * (num_samples_arr[idx] / total_samples)
                     updated_global_weights = global_weight_update
-
-                    # Weighing weight updates
-                    # for idx, weight_update in enumerate(weight_updates_of_all_clients):
-                    #     global_weight_update += weight_update * (num_samples_arr[idx] / total_samples)
-                    # updated_global_weights = global_w_prev + global_weight_update
 
                 updated_state_dict = {}
                 offset = 0
@@ -543,7 +533,7 @@ class FLServer:
                 print(f"{STYLES.FG_GREEN}Round {round_id + 1} completed{STYLES.RESET}")
                 print(f"  Total Samples: {total_samples}")
                 print(f"  Time taken for round {round_id + 1}: {time.time() - start_time_round:.2f} seconds")
-                make_plots(len(self.clients), model_name, client_fraction, server_folder_abs_path / "metrics.json")
+                # make_plots(len(self.clients), model_name, client_fraction, server_folder_abs_path / "metrics.json")
 
             print(f"\n{STYLES.FG_GREEN}Federated training completed after {num_rounds} rounds{STYLES.RESET}")
             print(f"{STYLES.FG_YELLOW}Total time taken: {time.time() - start_time_total:.2f} seconds{STYLES.RESET}")
@@ -570,11 +560,6 @@ class FLServer:
         return Nr / Dr
 
     def get_theta_arr(self, weight_updates_arr, num_samples_arr, curr_round_id, initial_weights_path, lr):
-        # model_weights_path = server_folder_abs_path / f"models/global_model_round_{curr_round_id - 1}.pt" if curr_round_id > 0 else initial_weights_path
-
-        # global_state_dict = torch.load(model_weights_path, map_location="cpu")
-        # global_w_prev = np.astype(torch.cat([v.flatten() for v in global_state_dict.values()]).numpy(), np.float32)
-
         gradients_arr = - 1 * weight_updates_arr / lr
         global_gradient = np.zeros_like(weight_updates_arr[0])
         total_samples = np.sum(num_samples_arr)
@@ -589,15 +574,14 @@ class FLServer:
         return theta_arr
     
     def select_clients_fedmodcs(self, client_resource_info, round_id, randomly_selected_clients, model_size, t_round, t_final):
-        # System parameters
-        T_cs = 0.0  # Client selection time
-        T_agg = 0.0  # Aggregation time
-        T_round = t_round  # Maximum round time constraint (3 minutes in paper)
+        T_cs = 0.0  
+        T_agg = 0.0  
+        T_round = t_round 
         T_final = t_final
-        T_s_empty = 0.0  # Initial synchronization time
+        T_s_empty = 0.0  
         
-        K_prime = randomly_selected_clients.copy()  # Randomly selected clients
-        K_prime.sort()  # Sort for consistent logging
+        K_prime = randomly_selected_clients.copy()  
+        K_prime.sort()  
         
         logging.info(f"Round {round_id}: Initial random selection K': {K_prime}")
         
@@ -858,12 +842,7 @@ def menu():
                 continue
 
             # Client fraction
-            # client_fraction = float(input(f"{STYLES.FG_YELLOW}Enter client fraction: {STYLES.RESET}"))
             client_fraction = 1.0
-            # if client_fraction <= 0 or client_fraction > 1:
-            #     print(f"{STYLES.BG_RED}Invalid client fraction. Value must be between 0.0 and 1.0.{STYLES.RESET}")
-            #     wait_for_enter()
-            #     continue
             
             # Check if clients are registered or not
             if len(fl_server.clients) == 0:
@@ -978,6 +957,7 @@ def make_plots(num_clients, model_name, client_fraction, json_output_path):
         try:
             loss_list = losses[model_name_iter]
             accuracy_list = accuracies[model_name_iter]
+
         except:
             continue
 
@@ -1055,7 +1035,7 @@ def make_plots_fedmodcs(num_clients, model_name, client_fraction, json_output_pa
     accuracy_list = accuracies[model_name]
     loss_list = losses[model_name]
     fedmodcs_clients_selected_list = fedmodcs_clients_selected_each_round[model_name]
-    # Save loss and accuracy plots for current model
+    
     fig, axes = plt.subplots(1, 3, figsize=(14, 6))
 
     sns.lineplot(ax=axes[0], x=timestamp_list, y=loss_list, label="Loss", color="steelblue")
@@ -1098,6 +1078,7 @@ def make_plots_fedmodcs(num_clients, model_name, client_fraction, json_output_pa
             accuracy_list = accuracies[model_name_iter]
             timestamp_list = timestamps[model_name_iter]
             fedmodcs_clients_selected_list = fedmodcs_clients_selected_each_round[model_name_iter]
+
         except:
             continue
         sns.lineplot(ax=axes[0], x=timestamp_list, y=loss_list, label=model_name_iter)

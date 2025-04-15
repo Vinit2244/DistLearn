@@ -1,0 +1,20 @@
+[
+    {
+        "model_name": "fedmodcs_5",
+        "num_clients": 2.8,
+        "accuracy": 94.01,
+        "time": 161
+    },
+    {
+        "model_name": "fedmodcs_10",
+        "num_clients": 8.7,
+        "accuracy": 92.22,
+        "time": 360
+    },
+    {
+        "model_name": "fedavg",
+        "num_clients": 10,
+        "accuracy": 95.17,
+        "time": 434
+    }
+]
