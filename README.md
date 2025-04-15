@@ -75,6 +75,16 @@ python3 train_all_models.py
 
 Contains results of the models when trained with all the data on a single device. Also stores the trained models as pth files.
 
+## `ablation` Directory
+
+Contains plots and results for ablation studies conducted on the models. It contains ablations of the following:
+1. FedSGD v/s FedAvg
+2. FedModCS
+3. Scale Testing (Number of clients)
+4. Training time analysis
+5. FedAvg v/s FedAdp
+
+
 ## `src` Directory  
 
 The `src` directory contains the base code for a **server-client file transfer system** with **dynamic server discovery** using `Consul`.  
@@ -123,49 +133,65 @@ Follow these steps to set up and run the Federated Learning system:
    pip install -r requirements.txt
    ```
 
-2. **Compile Protocol Buffers**  
+2. **Set Up Data**
+   Prepare the datasets for training:  
+   From the data directory run:
+   ```bash
+   python3 setup_data.py
+   ```
+   Followed by
+   ```bash
+   cd FashionMNIST
+   python3 convert_to_csv.py
+   cd ../MNIST
+   python3 convert_to_csv.py
+   ```
+
+> Note: Run all the make commands from the `src` directory.
+
+3. **Compile Protocol Buffers**  
    Generate gRPC files from `.proto` definitions:  
    ```bash
    make compile
    ```
    - This command uses the `protoc` compiler to generate Python code for gRPC communication based on the `.proto` files in the `proto/` directory.
 
-3. **Set Up the Environment**  
+4. **Set Up the Environment**  
    Prepare the directory structure and distribute datasets:  
    ```bash
    make do_setup_capabilities
    ```
    - This command ensures that all necessary directories are created and datasets are distributed to the appropriate locations for training.
 
-4. **Start the Consul Server**  
+5. **Start the Consul Server**  
    Start the Consul agent for dynamic service discovery:  
    ```bash
    make consul
    ```
    - This command launches the Consul server, which is used for service discovery, enabling clients to dynamically locate the server.
 
-5. **Start the Federated Learning Server**  
+6. **Start the Federated Learning Server**  
    Launch the server with optional encryption:  
    ```bash
    make start_server
    ```
    - This command starts the Federated Learning server. If encryption is enabled (`ENCRYPT=1`), the server will use SSL/TLS for secure communication.
 
-6. **Start the Clients**  
+7. **Start the Clients**  
    Start multiple clients to connect to the server:  
    ```bash
    make start_clients
    ```
    - This command launches the client processes, which will connect to the server, receive training tasks, and send back model updates.
 
-7. **Kill All Clients**  
+8. **Kill All Clients**  
    Stop all running clients:  
    ```bash
    make kill_clients
    ```
    - This command terminates all active client processes.
 
-8. **Clean Up**  
+9. **Clean Up**  
    Remove generated files and logs:  
    ```bash
    make clean
