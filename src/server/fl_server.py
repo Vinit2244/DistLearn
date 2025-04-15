@@ -385,28 +385,34 @@ class FLServer:
                     print(f"{STYLES.BG_RED}No successful client responses in round {round_id + 1}{STYLES.RESET}")
                     break
 
-                avg_weights = {}
+                # avg_weights = {}
                 weights_of_all_clients = []
+                weight_updates_of_all_clients = []
                 num_samples_arr = []
+
+                model_weights_path = server_folder_abs_path / f"models/global_model_round_{round_id - 1}.pt" if round_id > 0 else initial_weights_path
+                global_state_dict = torch.load(model_weights_path, map_location="cpu")
+                global_w_prev = np.astype(torch.cat([v.flatten() for v in global_state_dict.values()]).numpy(), np.float32)
+
+                response_order = []
+                for response in client_responses:
+                    client_model_path = server_folder_abs_path / f"received_files/{response.client_id}/round_{round_id}_trained.pt"
+                    client_state_dict = torch.load(client_model_path, map_location="cpu")
+                    client_weights = np.astype(torch.cat([v.flatten() for v in client_state_dict.values()]).numpy(), np.float32)
+                    weights_of_all_clients.append(client_weights)
+                    weight_updates_of_all_clients.append(client_weights - global_w_prev)
+                    num_samples_arr.append(response.samples_processed)
+                    response_order.append(response.client_id)
+                
+                weight_updates_of_all_clients = np.array(weight_updates_of_all_clients)
+                num_samples_arr = np.array(num_samples_arr)
 
                 # FedAdp
                 if training_algo == training_algos[2]:
-                    response_order = []
-                    for response in client_responses:
-                        client_model_path = server_folder_abs_path / f"received_files/{response.client_id}/round_{round_id}_trained.pt"
-                        client_state_dict = torch.load(client_model_path, map_location="cpu")
-                        client_weights = np.astype(torch.cat([v.flatten() for v in client_state_dict.values()]).numpy(), np.float32)
-                        weights_of_all_clients.append(client_weights)
-                        num_samples_arr.append(response.samples_processed)
-                        response_order.append(response.client_id)
-                    
-                    weights_of_all_clients = np.array(weights_of_all_clients)
-                    num_samples_arr = np.array(num_samples_arr)
-
                     # Calculate decayed learning rate
                     lr = fl_config["learning_rate"] * (lr_decay ** round_id)
 
-                    theta_arr = self.get_theta_arr(weights_of_all_clients, num_samples_arr, round_id, initial_weights_path, lr)
+                    theta_arr = self.get_theta_arr(weight_updates_of_all_clients, num_samples_arr, round_id, initial_weights_path, lr)
                     if round_id == 0:
                         smoothed_theta_arr = theta_arr
                     else:
@@ -439,39 +445,43 @@ class FLServer:
                     with open(json_file, 'w') as f:
                         json.dump(data, f, indent=2)
 
-                    for idx, response in enumerate(client_responses):
-                        client_model_path = server_folder_abs_path / f"received_files/{response.client_id}/round_{round_id}_trained.pt"
-                        client_model = model
-                        client_model.load_state_dict(torch.load(client_model_path))
-                        
-                        for name, param in client_model.state_dict().items():
-                            if name not in avg_weights:
-                                avg_weights[name] = param * psi_arr[idx]
-                            else:
-                                avg_weights[name] += param * psi_arr[idx]                                 
+                    global_weight_update = np.zeros_like(global_w_prev)
+
+                    # Weighing weights
+                    for idx, client_weight in enumerate(weights_of_all_clients):
+                        global_weight_update += client_weight * psi_arr[idx]
+                    updated_global_weights = global_weight_update
+
+                    # Weighing weight updates
+                    # for i, client_weight_update in enumerate(global_w_prev):
+                    #     global_weight_update += client_weight_update * psi_arr[i]
+                    # updated_global_weights = global_w_prev + global_weight_update                      
 
                 # FedSGD and FedAvg
                 else:
                     # Aggregate client updates (Federated Averaging)
-                    for response in client_responses:
-                        client_model_path = server_folder_abs_path / f"received_files/{response.client_id}/round_{round_id}_trained.pt"
+                    global_weight_update = np.zeros_like(global_w_prev)
 
-                        # Load weights into model
-                        client_model = model
-                        client_model.load_state_dict(torch.load(client_model_path))
+                    # Weighing weights
+                    # for idx, client_weight in enumerate(weights_of_all_clients):
+                    #     global_weight_update += client_weight * (num_samples_arr[idx] / total_samples)
+                    # updated_global_weights = global_weight_update
 
-                        # Calculate weight for this client (proportional to samples)
-                        client_weight = response.samples_processed / total_samples
+                    # Weighing weight updates
+                    for idx, weight_update in enumerate(weight_updates_of_all_clients):
+                        global_weight_update += weight_update * (num_samples_arr[idx] / total_samples)
+                    updated_global_weights = global_w_prev + global_weight_update
 
-                        # Add weighted contribution to average
-                        for name, param in client_model.state_dict().items():
-                            if name not in avg_weights:
-                                avg_weights[name] = param * client_weight
-                            else:
-                                avg_weights[name] += param * client_weight
-
+                updated_state_dict = {}
+                offset = 0
+                for name, param in global_state_dict.items():
+                    numel = param.numel()
+                    updated_param = updated_global_weights[offset:offset + numel].reshape(param.shape)
+                    updated_state_dict[name] = torch.tensor(updated_param, dtype=param.dtype)
+                    offset += numel
+                
                 # Update global model with averaged weights
-                model.load_state_dict(avg_weights)
+                model.load_state_dict(updated_state_dict)
 
                 # Save new global model
                 global_model_path = server_folder_abs_path / f"models/global_model_round_{round_id+1}.pt"
@@ -533,14 +543,14 @@ class FLServer:
         Dr = np.sum(Nr)
         return Nr / Dr
 
-    def get_theta_arr(self, weights_arr, num_samples_arr, curr_round_id, initial_weights_path, lr):
-        model_weights_path = server_folder_abs_path / f"models/global_model_round_{curr_round_id - 1}.pt" if curr_round_id > 0 else initial_weights_path
+    def get_theta_arr(self, weight_updates_arr, num_samples_arr, curr_round_id, initial_weights_path, lr):
+        # model_weights_path = server_folder_abs_path / f"models/global_model_round_{curr_round_id - 1}.pt" if curr_round_id > 0 else initial_weights_path
 
-        global_state_dict = torch.load(model_weights_path, map_location="cpu")
-        global_w_prev = np.astype(torch.cat([v.flatten() for v in global_state_dict.values()]).numpy(), np.float32)
+        # global_state_dict = torch.load(model_weights_path, map_location="cpu")
+        # global_w_prev = np.astype(torch.cat([v.flatten() for v in global_state_dict.values()]).numpy(), np.float32)
 
-        gradients_arr = - 1 * (weights_arr - global_w_prev) / lr
-        global_gradient = np.zeros_like(global_w_prev)
+        gradients_arr = - 1 * weight_updates_arr / lr
+        global_gradient = np.zeros_like(weight_updates_arr[0])
         total_samples = np.sum(num_samples_arr)
         for i, client_gradient in enumerate(gradients_arr):
             global_gradient += (num_samples_arr[i] / total_samples) * client_gradient
