@@ -521,12 +521,12 @@ class FLServer:
                 print(f"{STYLES.FG_GREEN}Round {round_id + 1} completed{STYLES.RESET}")
                 print(f"  Total Samples: {total_samples}")
                 print(f"  Time taken for round {round_id + 1}: {time.time() - start_time_round:.2f} seconds")
+                make_plots(len(self.clients), model_name, client_fraction, server_folder_abs_path / "metrics.json")
 
             print(f"\n{STYLES.FG_GREEN}Federated training completed after {num_rounds} rounds{STYLES.RESET}")
             print(f"{STYLES.FG_YELLOW}Total time taken: {time.time() - start_time_total:.2f} seconds{STYLES.RESET}")
 
             # Plotting loss and accuracy
-            make_plots(len(self.clients), model_name, client_fraction, server_folder_abs_path / "metrics.json")
 
         except Exception as e:
             print(f"{STYLES.BG_RED}Error during federated training: {str(e)}{STYLES.RESET}")
