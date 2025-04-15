@@ -24,8 +24,10 @@ def create_folders_and_distribute_data(n, IID, NonIID, x, data_folder=setup_fold
                                        client_script=setup_folder_abs_path / "../client/client.py",
                                        server_certificate=setup_folder_abs_path / "../server/certs/server.crt",
                                        ca_certificate=setup_folder_abs_path / "../CA/ca.crt",
-                                       test_data_fraction=0.05,
-                                       num_data_points=100,
+                                       fashion_mnist_test_data_path = setup_folder_abs_path / "../../data/fashion_mnist_test.csv",
+                                       mnist_test_data_path = setup_folder_abs_path / "../../data/mnist_test.csv",
+                                       test_data_fraction=0.025,
+                                       num_data_points=600,
                                        num_data_points_diabetes=400,
                                        n_classes=10):
     # Create clients and server_data folders
@@ -50,6 +52,8 @@ def create_folders_and_distribute_data(n, IID, NonIID, x, data_folder=setup_fold
         shutil.copy(server_certificate, clients_folder)
         shutil.copy(ca_certificate, clients_folder)
         shutil.copy(ca_certificate, setup_folder_abs_path / "../server/certs")
+        shutil.copy(fashion_mnist_test_data_path, setup_folder_abs_path / "../server/data/fashion_mnist_dataset.csv")
+        shutil.copy(mnist_test_data_path, setup_folder_abs_path / "../server/data/mnist_dataset.csv")
 
         client_certs_folder = client_dir / "certs"
         client_certs_folder.mkdir(parents=True, exist_ok=True)
@@ -89,15 +93,15 @@ def create_folders_and_distribute_data(n, IID, NonIID, x, data_folder=setup_fold
     dataset_files = ['diabetes_dataset.csv', 'fashion_mnist_dataset.csv', 'mnist_dataset.csv']
     
     for dataset_file in dataset_files:
-        # Reading and splitting data
         dataset_path = data_folder / dataset_file
         data = pd.read_csv(dataset_path)
-        train_data, test_data = train_test_split(data, test_size=test_data_fraction, random_state=42)
-        
-        # Save the test data to the server_data folder
-        test_data.to_csv(server_data_folder / dataset_file, index=False)
         
         if dataset_file == 'diabetes_dataset.csv':
+            train_data, test_data = train_test_split(data, test_size=test_data_fraction, random_state=42)
+            
+            # Save the test data to the server_data folder
+            test_data.to_csv(server_data_folder / dataset_file, index=False)
+
             for i in range(1, n + 1):
                 client_sample = train_data.sample(n=num_data_points_diabetes, random_state=42 + i)
                 client_data_folder = clients_folder / str(i) / "data"
@@ -111,12 +115,12 @@ def create_folders_and_distribute_data(n, IID, NonIID, x, data_folder=setup_fold
             for i in range(1, n + 1):
                 if i <= IID:
                     # IID client: randomly sample from the entire dataset
-                    client_sample = train_data.sample(n=num_data_points, random_state=42 + i)
+                    client_sample = data.sample(n=num_data_points, random_state=42 + i)
                 else:
                     client_shards = []
                     for j in range(x):
                         next_label = (prev_label + 1) % n_classes
-                        shard = train_data[train_data['label'] == next_label]
+                        shard = data[data['label'] == next_label]
                         shard = shard.sample(n=shard_size, random_state=42 + i + j)
                         client_shards.append(shard)
                         prev_label = next_label
@@ -185,6 +189,7 @@ def visualize_distributed_data(clients_folder=setup_folder_abs_path / "../client
         for client_id in range(1, num_clients + 1):
             client_dataset_path = clients_folder / str(client_id) / 'data' / dataset
             if not client_dataset_path.exists():
+                print("hi")
                 continue
                 
             client_df = pd.read_csv(client_dataset_path)

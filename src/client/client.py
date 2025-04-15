@@ -386,7 +386,7 @@ class ClientServicer(file_transfer_grpc.ClientServicer):
 
             # Calculate the decayed learning rate
             if lr_decay > 0:
-                learning_rate *= (1 / (1 + lr_decay * round_id))
+                learning_rate = learning_rate * (lr_decay ** round_id)
                 logging.info(f"Learning rate decayed to {learning_rate}")
 
             # Initialize the model based on model_type

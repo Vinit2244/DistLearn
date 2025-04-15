@@ -3,11 +3,11 @@ OUT_DIR=generated
 
 # Allow overriding with certain cmd line args
 SERVER_PORT ?= 50051
-IID ?= 1 # Number of IID clients
-NonIID ?= 9 # Number of Non IID clients
+IID ?= 2 # Number of IID clients
+NonIID ?= 8 # Number of Non IID clients
 x ?= 1 # Number of classes to each Non IID
-ENCRYPT ?= 1 # 1 for encryption, 0 for no encryption
-num_data_points ?= 1500 # Number of data points per client
+ENCRYPT ?= 0 # 1 for encryption, 0 for no encryption
+num_data_points ?= 600 # Number of data points per client
 num_data_points_diabetes ?= 400 # Number of data points per client for diabetes
 
 # Find all .proto files in the proto directory

@@ -404,7 +404,7 @@ class FLServer:
                     num_samples_arr = np.array(num_samples_arr)
 
                     # Calculate decayed learning rate
-                    lr = fl_config["learning_rate"] / (1 + lr_decay * round_id)
+                    lr = fl_config["learning_rate"] * (lr_decay ** round_id)
 
                     theta_arr = self.get_theta_arr(weights_of_all_clients, num_samples_arr, round_id, initial_weights_path, lr)
                     if round_id == 0:

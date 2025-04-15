@@ -6,6 +6,16 @@ import argparse
 import pandas as pd
 # from tqdm import tqdm
 import logging
+import numpy as np
+import random
+
+def set_seed(seed):
+    torch.manual_seed(seed)
+    torch.cuda.manual_seed_all(seed)
+    np.random.seed(seed)
+    random.seed(seed)
+    torch.backends.cudnn.deterministic = True
+    torch.backends.cudnn.benchmark = False
 
 class FashionMNISTDataset(Dataset):
     def __init__(self, csv_file):
@@ -16,7 +26,7 @@ class FashionMNISTDataset(Dataset):
         self.images = df.drop('label', axis=1).values
         
         # Normalize and reshape images
-        self.images = self.images / 1.0  # Scale to [0, 1]
+        self.images = self.images / 255.0  # Scale to [0, 1]
         self.images = self.images.reshape(-1, 1, 28, 28)  # Reshape to (N, C, H, W)
         
         # Convert to tensors
@@ -34,16 +44,16 @@ class FashionMNISTCNN(nn.Module):
     def __init__(self):
         super(FashionMNISTCNN, self).__init__()
         self.model = nn.Sequential(
-            nn.Conv2d(1, 32, kernel_size=3, padding=1),
+            nn.Conv2d(1, 32, kernel_size=5),
             nn.ReLU(),
             nn.MaxPool2d(2),
-            nn.Conv2d(32, 64, kernel_size=3, padding=1),
+            nn.Conv2d(32, 64, kernel_size=5),
             nn.ReLU(),
             nn.MaxPool2d(2),
             nn.Flatten(),
-            nn.Linear(64 * 7 * 7, 128),
+            nn.Linear(1024, 512),
             nn.ReLU(),
-            nn.Linear(128, 10)
+            nn.Linear(512, 10)
         )
 
     def forward(self, x):
@@ -130,6 +140,8 @@ def main(args_list):
                         choices=['adam', 'sgd', 'rmsprop'])
     parser.add_argument('--dataset_path', type=str, default='fashion_mnist_dataset.csv')
     parser.add_argument('--model_save_path', type=str, default='fashion_mnist_cnn.pth')
+
+    set_seed(42)
     
     if args_list:
         args = parser.parse_args(args_list)
