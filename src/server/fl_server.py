@@ -44,7 +44,7 @@ optimizers = ["SGD", "Adam"]
 model_types = ["DiabetesMLP", "FashionMNISTCNN", "MNISTMLP"]
 losses = {}
 accuracies = {}
-ALPHA = 5
+ALPHA = 2
 
 
 # ============================= CLASSES =============================
@@ -385,7 +385,6 @@ class FLServer:
                     print(f"{STYLES.BG_RED}No successful client responses in round {round_id + 1}{STYLES.RESET}")
                     break
 
-                # avg_weights = {}
                 weights_of_all_clients = []
                 weight_updates_of_all_clients = []
                 num_samples_arr = []
@@ -435,10 +434,14 @@ class FLServer:
                     sorted_indices = sorted(range(len(response_order)), key=lambda k: response_order[k])
                     response_order = [response_order[i] for i in sorted_indices]
                     psi_list = [psi_list[i] for i in sorted_indices]
+                    
+                    smoothed_theta_list = smoothed_theta_arr.tolist()
+                    smoothed_theta_list = [smoothed_theta_list[i] * 360 / np.pi for i in sorted_indices]
 
                     data.append({
+                        "response_order": response_order,
                         "psi_list": psi_list,
-                        "response_order": response_order
+                        "smoothed_theta_list": smoothed_theta_list
                     })
 
                     # Write back to JSON file
@@ -453,9 +456,9 @@ class FLServer:
                     updated_global_weights = global_weight_update
 
                     # Weighing weight updates
-                    # for i, client_weight_update in enumerate(global_w_prev):
+                    # for i, client_weight_update in enumerate(weight_updates_of_all_clients):
                     #     global_weight_update += client_weight_update * psi_arr[i]
-                    # updated_global_weights = global_w_prev + global_weight_update                      
+                    # updated_global_weights = global_w_prev + global_weight_update
 
                 # FedSGD and FedAvg
                 else:
@@ -463,14 +466,14 @@ class FLServer:
                     global_weight_update = np.zeros_like(global_w_prev)
 
                     # Weighing weights
-                    # for idx, client_weight in enumerate(weights_of_all_clients):
-                    #     global_weight_update += client_weight * (num_samples_arr[idx] / total_samples)
-                    # updated_global_weights = global_weight_update
+                    for idx, client_weight in enumerate(weights_of_all_clients):
+                        global_weight_update += client_weight * (num_samples_arr[idx] / total_samples)
+                    updated_global_weights = global_weight_update
 
                     # Weighing weight updates
-                    for idx, weight_update in enumerate(weight_updates_of_all_clients):
-                        global_weight_update += weight_update * (num_samples_arr[idx] / total_samples)
-                    updated_global_weights = global_w_prev + global_weight_update
+                    # for idx, weight_update in enumerate(weight_updates_of_all_clients):
+                    #     global_weight_update += weight_update * (num_samples_arr[idx] / total_samples)
+                    # updated_global_weights = global_w_prev + global_weight_update
 
                 updated_state_dict = {}
                 offset = 0
