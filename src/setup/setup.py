@@ -3,6 +3,7 @@ import argparse
 import warnings
 import numpy as np
 import pandas as pd
+import json
 import seaborn as sns
 from pathlib import Path
 import matplotlib.pyplot as plt
@@ -16,6 +17,159 @@ setup_folder_abs_path = Path(__file__).parent.resolve()
 sns.set_theme(style="whitegrid", context="notebook", font_scale=1.2)
 PLOTS_DIR = setup_folder_abs_path / "data_distribution_plots"
 COLOR_PALETTE = "viridis"
+
+# def setup_client_capabilities(num_clients, capability_range = (10,100), bandwidth_range=(1,10), variation_percentage=20, clients_folder = setup_folder_abs_path / "../clients"):
+#     """Setup client capabilities with mean values randomly drawn from the given ranges
+#         and variations controlled by variation_percentage"""
+#     client_capabilities = {}
+#     mean_cap_list = []
+#     mean_bw_list = []
+#     has_gpu_list = []
+#     for client_id in range(num_clients):
+#         # Mean computation capability (samples/second)
+#         mean_capability = np.random.uniform(capability_range[0], capability_range[1])
+
+#         # Mean network bandwidth (MB/second)
+#         mean_bandwidth = np.random.uniform(bandwidth_range[0], bandwidth_range[1])
+        
+#         # GPU availability (10% of clients have GPU)
+#         has_gpu = np.random.random() < 0.1
+
+#         client_capabilities[client_id] = {
+#                 "mean_capability": mean_capability,
+#                 "mean_bandwidth": mean_bandwidth,
+#                 "has_gpu": has_gpu,
+#                 "variation_percentage": variation_percentage
+#             }
+        
+#         # For plotting
+#         mean_cap_list.append(mean_capability)
+#         mean_bw_list.append(mean_bandwidth)
+#         has_gpu_list.append(int(has_gpu))  # convert bool to 0/1 for plotting
+        
+#         # Write capabilities to clients folder
+#         client_folder = clients_folder / str(client_id + 1)
+#         client_cap_file = client_folder / "client_capabilities.json"
+#         with open(client_cap_file, "w") as f:
+#             json.dump(client_capabilities[client_id], f, indent=4)
+
+#          # Visualization
+#     client_ids = list(range(num_clients))
+#     fig, axs = plt.subplots(3, 1, figsize=(12, 10), sharex=True)
+
+#     axs[0].bar(client_ids, mean_cap_list, color='skyblue')
+#     axs[0].set_ylabel("Mean Capability (samples/sec)")
+#     axs[0].set_title("Client Capabilities")
+
+#     axs[1].bar(client_ids, mean_bw_list, color='lightgreen')
+#     axs[1].set_ylabel("Mean Bandwidth (MB/sec)")
+
+#     axs[2].bar(client_ids, has_gpu_list, color='salmon')
+#     axs[2].set_ylabel("Has GPU (1=True, 0=False)")
+#     axs[2].set_xlabel("Client ID")
+
+#     plt.tight_layout()
+#     plt.savefig(PLOTS_DIR / "client_capabilities.png", dpi=300, bbox_inches='tight', facecolor='white')
+#     plt.close()
+        
+#     return client_capabilities
+
+def setup_client_capabilities(
+    num_clients,
+    capability_range=(10, 100),
+    bandwidth_range=(1, 10),
+    variation_percentage=20,
+    clients_folder=setup_folder_abs_path / "../clients",
+    dataset_size=400,       # in samples
+    model_size=0.02            # in MB
+):
+    """
+    Setup client capabilities with mean values randomly drawn from the given ranges
+    and variations controlled by variation_percentage. Also plots and saves a visualization
+    with update+upload time.
+    """
+    import numpy as np
+    import matplotlib.pyplot as plt
+    import json
+    import os
+
+    client_capabilities = {}
+    mean_cap_list = []
+    mean_bw_list = []
+    has_gpu_list = []
+    total_time_list = []
+
+    for client_id in range(num_clients):
+        # Mean computation capability (samples/second)
+        mean_capability = np.random.uniform(*capability_range)
+
+        # Mean network bandwidth (MB/second)
+        mean_bandwidth = np.random.uniform(*bandwidth_range)
+
+        # GPU availability (10% of clients have GPU)
+        has_gpu = np.random.random() < 0.2
+
+        # Compute update and upload time
+        update_time = dataset_size / mean_capability
+        upload_time = model_size / mean_bandwidth
+        total_time = update_time + upload_time
+
+        if has_gpu:
+            total_time *= 0.5
+
+        client_capabilities[client_id] = {
+            "mean_capability": mean_capability,
+            "mean_bandwidth": mean_bandwidth,
+            "has_gpu": has_gpu,
+            "variation_percentage": variation_percentage
+        }
+
+        mean_cap_list.append(mean_capability)
+        mean_bw_list.append(mean_bandwidth)
+        has_gpu_list.append(int(has_gpu))
+        total_time_list.append(total_time)
+
+        # Write to file
+        client_folder = clients_folder / str(client_id + 1)
+        client_folder.mkdir(parents=True, exist_ok=True)
+        client_cap_file = client_folder / "client_capabilities.json"
+        with open(client_cap_file, "w") as f:
+            json.dump(client_capabilities[client_id], f, indent=4)
+
+    # Visualization
+    client_ids = list(range(num_clients))
+    fig, axs = plt.subplots(4, 1, figsize=(15, 20), sharex=True)
+
+    axs[0].bar(client_ids, mean_cap_list, color='skyblue')
+    axs[0].set_ylabel("Mean Capability (samples/sec)")
+    axs[0].set_title("Client Capabilities")
+    axs[0].grid(False)
+
+
+    axs[1].bar(client_ids, mean_bw_list, color='salmon')
+    axs[1].set_ylabel("Mean Bandwidth (MB/sec)")
+    axs[1].grid(False)
+
+
+    axs[2].bar(client_ids, has_gpu_list, color='green')
+    axs[2].set_ylabel("Has GPU (1=True, 0=False)")
+    axs[2].grid(False)
+
+
+    axs[3].bar(client_ids, total_time_list, color='plum')
+    axs[3].set_ylabel("Update + Upload Time (sec)")
+    axs[3].set_xlabel("Client ID")
+    # Make grid false
+    axs[3].grid(False)
+
+    axs[3].axhline(y=5, color='gray', linestyle='--', linewidth=1)
+    axs[3].axhline(y=10, color='gray', linestyle='--', linewidth=1)
+
+    plt.tight_layout()
+    plt.savefig(PLOTS_DIR / "client_capabilities.png", dpi=300, bbox_inches='tight', facecolor='white')
+    plt.close()
+
+    return client_capabilities
 
 
 def create_folders_and_distribute_data(n, IID, NonIID, x, data_folder=setup_folder_abs_path / "../../data", 
@@ -261,7 +415,6 @@ def visualize_distributed_data(clients_folder=setup_folder_abs_path / "../client
         plt.tight_layout(rect=[0, 0, 1, 0.96], pad=3.0)
         plt.savefig(PLOTS_DIR / f'distributed_{dataset_name}.png', dpi=300, bbox_inches='tight', facecolor='white')
         plt.close()
-
         
 if __name__ == "__main__":
     argparser = argparse.ArgumentParser(description="Data distribution and visualization system")
@@ -271,12 +424,18 @@ if __name__ == "__main__":
     argparser.add_argument('--IID', type=int, required=True, help="Number of IID clients")
     argparser.add_argument('--NonIID', type=int, required=True, help="Number of Non-IID clients")
     argparser.add_argument('--x', type=int, required=True, help="Number of classes at the Non-IID clients")
+    argparser.add_argument('--setup_capabilities', action='store_true', 
+                         help="Setup client capabilities and save to files")
     argparser.add_argument('--num_data_points', type=int, default=1500, help="Number of data points per client")
     argparser.add_argument('--num_data_points_diabetes', type=int, default=400, help="Number of data points for diabetes dataset")
     
     args = argparser.parse_args()
     create_folders_and_distribute_data(n=args.num_clients, IID=args.IID, NonIID=args.NonIID, x=args.x, 
                                        num_data_points=args.num_data_points, num_data_points_diabetes=args.num_data_points_diabetes)
+
+    if args.setup_capabilities:
+        client_capabilities = setup_client_capabilities(num_clients=args.num_clients)
+        print(f"Generated capabilities for {args.num_clients} clients")
     
     if args.visualize_initial:
         visualize_initial_data()

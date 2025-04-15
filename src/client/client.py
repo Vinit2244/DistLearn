@@ -1,6 +1,7 @@
 # ============================= IMPORTS ==============================
 import os
 import sys
+import time
 import json
 import grpc
 import torch
@@ -9,6 +10,7 @@ import logging
 import argparse
 import warnings
 import speedtest
+import numpy as np
 from pathlib import Path
 from concurrent import futures
 
@@ -25,7 +27,7 @@ sys.path.append(str(client_folder_abs_path / "../../utils"))
 from utils import clear_screen, wait_for_enter, get_server_address, get_ip, STYLES, CHUNK_SIZE, DIABETES_MLP_INPUT_SIZE
 
 server_stub = None
-
+fedmodcs_flag = 0  # Declared at module level (global)
 
 # ============================= CLASSES ==============================
 class ServerSessionManager:
@@ -146,6 +148,7 @@ class Client:
         with ServerSessionManager():
             filename = file_path.name
             file_size = file_path.stat().st_size
+            bandwidth = self.get_network_bandwidth()  # In Mbps
             logging.info(f"Starting to send file: {filename} (size: {file_size} bytes)")
             
             def request_iterator():
@@ -157,6 +160,15 @@ class Client:
                             break
                         chunk_number += 1
                         logging.info(f"Sending chunk {chunk_number} of {len(chunk)} bytes")
+
+                        if fedmodcs_flag:
+                            logging.info(f"Simulating network delay for chunk {chunk_number}")
+                            # Simulate network delay based on bandwidth
+                            # bandwidth is in Mbps, convert to bytes/sec
+                            bytes_per_sec = (bandwidth * 1_000_000) / 8
+                            time_to_send = len(chunk) / bytes_per_sec
+                            time.sleep(time_to_send)
+
                         yield file_transfer_pb2.FileChunk(
                             filename=filename,
                             id=my_id,
@@ -254,22 +266,69 @@ class Client:
             return 0
 
     def get_cpu_speed_factor(self):
-        # Use CPU frequency as a proxy (can normalize if needed)
+        """Get CPU speed factor from client capabilities with variation"""
         try:
-            freq = psutil.cpu_freq()
-            return freq.current / 1000  # Normalize to GHz
-        except:
+            # Get path to client_capabilities.json (assuming it's in the same directory as the script)
+            capabilities_file = Path(__file__).parent / "client_capabilities.json"
+            
+            with open(capabilities_file, 'r') as f:
+                capabilities = json.load(f)
+                
+            mean_capability = capabilities["mean_capability"]
+            variation_percentage = capabilities["variation_percentage"]
+            
+            # Apply Gaussian variation
+            std_dev = mean_capability * (variation_percentage / 100)
+            current_capability = max(1, np.random.normal(mean_capability, std_dev))
+            
+            return current_capability
+            
+        except Exception as e:
+            print(f"Error reading capabilities: {e}, using fallback")
             return 1.0  # Default fallback
 
     def get_network_bandwidth(self):
-        # Simple network test using speedtest (optional: cache this)
+        """Get network bandwidth from client capabilities with variation"""
         try:
-            st = speedtest.Speedtest()
-            download_mbps = st.download() / 1_000_000  # Convert to Mbps
-            return round(download_mbps, 2)
-        except:
+            # Get path to client_capabilities.json
+            capabilities_file = Path(__file__).parent / "client_capabilities.json"
+            
+            with open(capabilities_file, 'r') as f:
+                capabilities = json.load(f)
+                
+            mean_bandwidth = capabilities["mean_bandwidth"]
+            variation_percentage = capabilities["variation_percentage"]
+            
+            # Apply Gaussian variation (convert to Mbps first if needed)
+            std_dev = mean_bandwidth * (variation_percentage / 100)
+            current_bandwidth = max(0.1, np.random.normal(mean_bandwidth, std_dev))
+            
+            return current_bandwidth
+            
+        except Exception as e:
+            print(f"Error reading capabilities: {e}, using fallback")
             return 10.0  # Fallback if speedtest fails
         
+    def get_gpu_info(self):
+        """Get GPU information from client capabilities"""
+        try:
+            # Get path to client_capabilities.json
+            capabilities_file = Path(__file__).parent / "client_capabilities.json"
+            
+            with open(capabilities_file, 'r') as f:
+                capabilities = json.load(f)
+                
+            gpu_available = capabilities.get("has_gpu", False)
+            
+            # If GPU is available, get additional GPU specs if they exist
+            if gpu_available:
+                return True
+            else:
+                return False
+            
+        except Exception as e:
+            print(f"Error reading GPU capabilities: {e}, using fallback")
+            return {"available": False}  # Default fallback        
 
 class ClientServicer(file_transfer_grpc.ClientServicer):
     def TransferFile(self, request_iterator, context):
@@ -422,6 +481,12 @@ class ClientServicer(file_transfer_grpc.ClientServicer):
             trained_model_path = client_folder_abs_path / f"models/round_{round_id}_trained.pt"
             torch.save(model.state_dict(), trained_model_path)
 
+            if fedmodcs_flag:
+                cpu_speed = client.get_cpu_speed_factor() # samples per second
+                simulated_training_time = len(dataset) / cpu_speed
+                logging.info(f"Simulating training delay: {simulated_training_time:.2f} seconds based on CPU speed factor")
+                time.sleep(simulated_training_time)
+
             client.send_file_to_server(trained_model_path)
 
             return file_transfer_pb2.TrainingResponse(
@@ -444,9 +509,11 @@ class ClientServicer(file_transfer_grpc.ClientServicer):
             dataset_size = client.get_dataset_size()
             cpu_speed_factor = client.get_cpu_speed_factor()
             network_bandwidth = client.get_network_bandwidth()
-            has_gpu = torch.cuda.is_available()
+            has_gpu = client.get_gpu_info()
 
             logging.info(f"Sending resource info -> Dataset Size: {dataset_size}, CPU Factor: {cpu_speed_factor}, Bandwidth: {network_bandwidth} Mbps, GPU: {has_gpu}")
+            global fedmodcs_flag
+            fedmodcs_flag = 1
             
             return file_transfer_pb2.ResourceInfo(
                 dataset_size=dataset_size,

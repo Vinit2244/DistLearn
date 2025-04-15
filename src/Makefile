@@ -31,6 +31,9 @@ start_server:
 do_setup:
 	python3 setup/setup.py --num_clients=$$(($(IID) + $(NonIID))) --IID=$(IID) --NonIID=$(NonIID) --x=$(x) --num_data_points=$(num_data_points) --num_data_points_diabetes=$(num_data_points_diabetes)
 
+do_setup_capabilities:
+	python3 setup/setup.py --num_clients=$$(($(IID) + $(NonIID))) --IID=$(IID) --NonIID=$(NonIID) --x=$(x) --setup_capabilities
+
 do_setup_and_visualise:
 	python3 setup/setup.py --num_clients=$$(($(IID) + $(NonIID))) --visualize_initial --visualize_distributed --IID=$(IID) --NonIID=$(NonIID) --x=$(x) --num_data_points=$(num_data_points) --num_data_points_diabetes=$(num_data_points_diabetes)
 

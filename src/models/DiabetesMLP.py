@@ -6,6 +6,16 @@ import pandas as pd
 import torch.optim as optim
 import argparse
 import logging
+import numpy as np
+import random
+
+def set_seed(seed):
+    torch.manual_seed(seed)
+    torch.cuda.manual_seed_all(seed)
+    np.random.seed(seed)
+    random.seed(seed)
+    torch.backends.cudnn.deterministic = True
+    torch.backends.cudnn.benchmark = False
 
 # Custom dataset class
 class DiabetesDataset(Dataset):
@@ -139,6 +149,9 @@ def main(args_list):
         args = parser.parse_args(args_list)
     else:
         args = parser.parse_args()
+
+    # Set random seed for reproducibility
+    set_seed(42)
 
     # Initialize dataset and loader
     dataset = DiabetesDataset(args.dataset_path)

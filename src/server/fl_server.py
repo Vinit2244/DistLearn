@@ -44,8 +44,9 @@ optimizers = ["SGD", "Adam"]
 model_types = ["DiabetesMLP", "FashionMNISTCNN", "MNISTMLP"]
 losses = {}
 accuracies = {}
+timestamps = {}
+fedmodcs_clients_selected_each_round = {}
 ALPHA = 2
-
 
 # ============================= CLASSES =============================
 class ClientSessionManager:
@@ -181,7 +182,7 @@ class FLServer:
                         if not chunk:
                             break
                         chunk_number += 1
-                        logging.info(f"Sending chunk {chunk_number} of {len(chunk)} bytes")
+                        # logging.info(f"Sending chunk {chunk_number} of {len(chunk)} bytes")
                         yield file_transfer_pb2.FileChunk(
                             filename=filename,
                             id=-1,
@@ -198,7 +199,7 @@ class FLServer:
                 print(f"{STYLES.BG_RED + STYLES.FG_WHITE}Error: {response.msg}{STYLES.RESET}")
                 return 1
 
-    def initialize_fl(self, training_algo, num_epochs, learning_rate, optimizer, batch_size, model_type, client_fraction, lr_decay=0.995):
+    def initialize_fl(self, training_algo, num_epochs, learning_rate, optimizer, batch_size, model_type, client_fraction, t_round, t_final, lr_decay=0.995):
         fl_config_server = {
             "training_algo":    training_algo,
             "num_epochs":       num_epochs,
@@ -206,7 +207,9 @@ class FLServer:
             "optimizer":        optimizer,
             "batch_size":       batch_size,
             "model_type":       model_type,
-            "lr_decay":         lr_decay
+            "lr_decay":         lr_decay,
+            "t_round":        t_round,
+            "t_final":        t_final
         }
 
         fl_config_client = {
@@ -274,6 +277,8 @@ class FLServer:
             model_type      = fl_config["model_type"]
             lr              = fl_config["learning_rate"]
             optimizer       = fl_config["optimizer"]
+            t_round         = fl_config["t_round"]
+            t_final         = fl_config["t_final"]
             lr_decay       = fl_config["lr_decay"]
 
             # Initialize the appropriate model
@@ -295,6 +300,7 @@ class FLServer:
                 smoothed_theta_arr = np.zeros(len(self.clients))
 
             start_time_total = time.time()
+            cumulative_time = 0
             for round_id in range(num_rounds):
                 print(f"\n{STYLES.FG_CYAN}=== Starting Round {round_id + 1}/{num_rounds} ==={STYLES.RESET}")
                 start_time_round = time.time()
@@ -358,7 +364,7 @@ class FLServer:
                         except Exception as e:
                             logging.error(f"Failed to get resource info from client {client_id}: {e}")
                             
-                    selected_clients = self.select_clients_fedmodcs(client_resource_info, round_id, selected_clients, file_size_mb)
+                    selected_clients = self.select_clients_fedmodcs(client_resource_info, round_id, selected_clients, file_size_mb, t_round, t_final)
                     num_selected = len(selected_clients)
                     print(f"{STYLES.FG_CYAN}Selected {num_selected}/{num_clients} clients for training after FedModCS.{STYLES.RESET}")
                 
@@ -510,16 +516,29 @@ class FLServer:
                 print(f"{STYLES.FG_YELLOW}Loss: {round(loss, 4)}")
                 print(f"Accuracy: {round(acc, 4)}%{STYLES.RESET}")
 
-                model_name = f"{training_algo}_{model_type}_{optimizer}_{client_fraction}"
+                if training_algo == training_algos[3]:
+                    model_name = f"{training_algo}_{model_type}_{optimizer}_{t_round}"
+                else:
+                    model_name = f"{training_algo}_{model_type}_{optimizer}"
 
                 # Store loss and accuracy for this round for plotting after training
                 if losses.get(model_name) is None:
                     losses[model_name] = []
                 if accuracies.get(model_name) is None:
                     accuracies[model_name] = []
+                if timestamps.get(model_name) is None:
+                    timestamps[model_name] = []
+                if fedmodcs_clients_selected_each_round.get(model_name) is None:
+                    fedmodcs_clients_selected_each_round[model_name] = []
 
                 losses[model_name].append(loss)
                 accuracies[model_name].append(acc)
+                fedmodcs_clients_selected_each_round[model_name].append(len(selected_clients))
+
+                if training_algo == training_algos[3]:
+                    fedmodcs_time = time.time() - start_time_round
+                    cumulative_time += fedmodcs_time
+                    timestamps[model_name].append(cumulative_time)
 
                 print(f"{STYLES.FG_GREEN}Round {round_id + 1} completed{STYLES.RESET}")
                 print(f"  Total Samples: {total_samples}")
@@ -529,7 +548,11 @@ class FLServer:
             print(f"\n{STYLES.FG_GREEN}Federated training completed after {num_rounds} rounds{STYLES.RESET}")
             print(f"{STYLES.FG_YELLOW}Total time taken: {time.time() - start_time_total:.2f} seconds{STYLES.RESET}")
 
-            # Plotting loss and accuracy
+            if training_algo == training_algos[3]:
+                make_plots_fedmodcs(len(self.clients), model_name, client_fraction, server_folder_abs_path / "metrics.json")
+            else:
+                # Plotting loss and accuracy
+                make_plots(len(self.clients), model_name, client_fraction, server_folder_abs_path / "metrics.json")
 
         except Exception as e:
             print(f"{STYLES.BG_RED}Error during federated training: {str(e)}{STYLES.RESET}")
@@ -565,11 +588,12 @@ class FLServer:
         theta_arr = np.arccos(Nr_arr / Dr_arr)
         return theta_arr
     
-    def select_clients_fedmodcs(self, client_resource_info, round_id, randomly_selected_clients, model_size):
+    def select_clients_fedmodcs(self, client_resource_info, round_id, randomly_selected_clients, model_size, t_round, t_final):
         # System parameters
         T_cs = 0.0  # Client selection time
         T_agg = 0.0  # Aggregation time
-        T_round = 100  # Maximum round time constraint (3 minutes in paper)
+        T_round = t_round  # Maximum round time constraint (3 minutes in paper)
+        T_final = t_final
         T_s_empty = 0.0  # Initial synchronization time
         
         K_prime = randomly_selected_clients.copy()  # Randomly selected clients
@@ -588,8 +612,11 @@ class FLServer:
                 dataset_size = info["dataset_size"]
                 cpu_factor = info["cpu_speed_factor"]
 
-                t_UL[client_id] = model_size / (bandwidth + 0.1)
-                t_UD[client_id] = dataset_size / (cpu_factor + 0.1)
+                bytes_per_sec = (bandwidth * 1000000) / 8
+                t_UL[client_id] = model_size / (bytes_per_sec + 1e-6)  # small epsilon to avoid div by 0
+
+                # t_UL[client_id] = model_size / (bandwidth + 0.1)
+                t_UD[client_id] = dataset_size / cpu_factor
                 if info["has_gpu"]:
                     t_UD[client_id] *= 0.5  # GPU clients are faster   
 
@@ -640,7 +667,7 @@ class FLServer:
             if t < T_round:
                 Theta = Theta_prime
                 S.append(x)
-                T_s = T_S_union_x
+                # T_s = T_S_union_x
 
                 logging.info(f"Added client {x} to selection. New Theta: {Theta}, Time: {t}")
             else:
@@ -724,8 +751,7 @@ class FLServerServicer(file_transfer_grpc.FLServerServicer):
             return file_transfer_pb2.FileResponse(
                 err_code=1,
                 msg=f"Unexpected error: {str(e)}"
-            )
-
+            )      
 
 # ============================= FUNCTIONS =============================
 def menu():
@@ -782,6 +808,24 @@ def menu():
                 num_epochs = 1
             else:
                 num_epochs = int(input(f"{STYLES.FG_YELLOW}Enter number of epochs: {STYLES.RESET}"))
+            
+            if training_algo - 1 == 3:
+                # Ask for t_round
+                t_round = int(input(f"{STYLES.FG_YELLOW}Enter t_round (in seconds): {STYLES.RESET}"))
+                if t_round <= 0:
+                    print(f"{STYLES.BG_RED}t_round must be positive{STYLES.RESET}")
+                    wait_for_enter()
+                    continue
+                # Ask for t_final
+                t_final = int(input(f"{STYLES.FG_YELLOW}Enter t_final (in seconds): {STYLES.RESET}"))
+                if t_final <= 0:
+                    print(f"{STYLES.BG_RED}t_final must be positive{STYLES.RESET}")
+                    wait_for_enter()
+                    continue
+            
+            else:
+                t_round = None
+                t_final = None
 
             # Learning Rate
             learning_rate = float(input(f"{STYLES.FG_YELLOW}Enter learning rate: {STYLES.RESET}"))
@@ -829,7 +873,7 @@ def menu():
             
             try:
                 fl_server.initialize_fl(training_algos[training_algo - 1], num_epochs, learning_rate, optimizers[optimizer - 1], 
-                                                           batch_size, model_types[model_type - 1], client_fraction)
+                                                           batch_size, model_types[model_type - 1], client_fraction, t_round, t_final)
                 print(f"{STYLES.FG_GREEN}Federated learning initialized successfully!{STYLES.RESET}")
             except Exception as e:
                 print(f"{STYLES.BG_RED}Error initializing federated learning: {str(e)}{STYLES.RESET}")
@@ -869,6 +913,8 @@ def menu():
             # Clear loss and accuracy arrays
             losses.clear()
             accuracies.clear()
+            timestamps.clear()
+            fedmodcs_clients_selected_each_round.clear()
             print(f"{STYLES.FG_GREEN}Loss and accuracy arrays cleared!{STYLES.RESET}")
             wait_for_enter()      
         
@@ -986,7 +1032,137 @@ def make_plots(num_clients, model_name, client_fraction, json_output_path):
     existing_data.append(result_entry)
 
     with open(json_output_path, "w") as f:
-        json.dump(existing_data, f, indent=4)
+        json.dump(existing_data, f, indent=4)   
+
+def make_plots_fedmodcs(num_clients, model_name, client_fraction, json_output_path):    
+    server_config_path = server_folder_abs_path / "fl_config_server.json"
+    with open(server_config_path, "r") as f:
+        fl_config = json.load(f)
+
+    training_algo   = fl_config["training_algo"]
+    num_epochs      = fl_config["num_epochs"]
+    learning_rate   = fl_config["learning_rate"]
+    optimizer       = fl_config["optimizer"]
+    batch_size      = fl_config["batch_size"]
+    model_type      = fl_config["model_type"]
+    t_round         = fl_config["t_round"]
+    t_final         = fl_config["t_final"]
+
+    metric_plots_dir = server_folder_abs_path / "metric_plots"
+    metric_plots_dir.mkdir(parents=True, exist_ok=True)
+
+    timestamp_list = timestamps[model_name]
+    accuracy_list = accuracies[model_name]
+    loss_list = losses[model_name]
+    fedmodcs_clients_selected_list = fedmodcs_clients_selected_each_round[model_name]
+    # Save loss and accuracy plots for current model
+    fig, axes = plt.subplots(1, 3, figsize=(14, 6))
+
+    sns.lineplot(ax=axes[0], x=timestamp_list, y=loss_list, label="Loss", color="steelblue")
+    axes[0].set_title("Loss Curve")
+    axes[0].set_xlabel("Time")
+    axes[0].set_ylabel("Loss")
+    axes[0].legend()
+    axes[0].grid(True)
+
+    sns.lineplot(ax=axes[1], x=timestamp_list, y=accuracy_list, label="Accuracy", color="darkorange")
+    axes[1].set_title("Accuracy Curve")
+    axes[1].set_xlabel("Time")
+    axes[1].set_ylabel("Accuracy (%)")
+    axes[1].legend()
+    axes[1].grid(True)
+
+    sns.lineplot(ax=axes[2], x=timestamp_list, y=fedmodcs_clients_selected_list, label="FedModCS Clients Selected", color="green")
+    axes[2].set_title("FedModCS Clients Selected")
+    axes[2].set_xlabel("Time")
+    axes[2].set_ylabel("Clients Selected")
+    axes[2].legend()
+    axes[2].grid(True)
+
+    plt.suptitle(
+        f"Federated Learning Metrics\nModel Type: {model_type} | Algorithm: {training_algo} | Rounds (Server): {len(loss_list)}\n"
+        f"Epochs (Client): {num_epochs} | Learning Rate = {learning_rate} | Optimizer = {optimizer}\n"
+        f"Batch Size = {batch_size} | Client Frac = {client_fraction} | # Clients: {num_clients}\n"
+        f"t_round = {t_round} | t_final = {t_final}",
+        fontsize=16
+    )
+    plt.tight_layout()
+    plt.savefig(metric_plots_dir / f"{model_type}_{training_algo}_{t_round}_metrics.png", dpi=300)
+    plt.close(fig)
+
+    # Plot all model losses and accuracies
+    fig, axes = plt.subplots(1, 3, figsize=(14, 6))
+    for model_name_iter, _ in losses.items():
+        try:
+            loss_list = losses[model_name_iter]
+            accuracy_list = accuracies[model_name_iter]
+            timestamp_list = timestamps[model_name_iter]
+            fedmodcs_clients_selected_list = fedmodcs_clients_selected_each_round[model_name_iter]
+        except:
+            continue
+        sns.lineplot(ax=axes[0], x=timestamp_list, y=loss_list, label=model_name_iter)
+        sns.lineplot(ax=axes[1], x=timestamp_list, y=accuracy_list, label=model_name_iter)
+        sns.lineplot(ax=axes[2], x=timestamp_list, y=fedmodcs_clients_selected_list, label=model_name_iter)
+
+    axes[0].set_xlabel("Time")
+    axes[0].set_ylabel("Loss")
+    axes[0].set_title("Loss Curve for Different Models")
+    axes[0].legend()
+    axes[0].grid(True)
+
+    axes[1].set_title("Accuracy Curve for Different Models")
+    axes[1].set_xlabel("Time")
+    axes[1].set_ylabel("Accuracy (%)")
+    axes[1].legend()
+    axes[1].grid(True)
+
+    axes[2].set_title("FedModCS Clients Selected")
+    axes[2].set_xlabel("Time")
+    axes[2].set_ylabel("Clients Selected")
+    axes[2].legend()
+    axes[2].grid(True)
+
+    plt.suptitle("Loss & Accuracy Curves for Different Models")
+    plt.tight_layout()
+    plt.savefig(metric_plots_dir / f"loss_curve_all_models_fedmodcs.png", dpi=300)
+    plt.close(fig)
+
+     # Append data to output JSON
+    result_entry = {
+        "model_name": model_name,
+        "model_type": model_type,
+        "training_algo": training_algo,
+        "num_clients": num_clients,
+        "client_fraction": client_fraction,
+        "num_epochs": num_epochs,
+        "learning_rate": learning_rate,
+        "optimizer": optimizer,
+        "batch_size": batch_size,
+        "num_rounds": len(losses[model_name]),
+        "T_round": t_round,
+        "T_final": t_final,
+        "losses" : losses[model_name],
+        "timestamps": timestamps[model_name],
+        "accuracies": accuracies[model_name],
+        "fedmodcs_clients_selected_each_round": fedmodcs_clients_selected_each_round[model_name]
+    }
+
+    # Read existing data (if any) and append
+    if os.path.exists(json_output_path):
+        with open(json_output_path, "r") as f:
+            try:
+                existing_data = json.load(f)
+                if not isinstance(existing_data, list):
+                    existing_data = [existing_data]
+            except json.JSONDecodeError:
+                existing_data = []
+    else:
+        existing_data = []
+
+    existing_data.append(result_entry)
+
+    with open(json_output_path, "w") as f:
+        json.dump(existing_data, f, indent=4)   
 
 
 # ============================= MAIN =============================
