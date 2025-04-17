@@ -71,3 +71,6 @@ clean:
 	- rm -f server/fl_server.json
 	- rm -rf server/data
 	- rm -rf server/received_files
+
+website:
+	python3 ../website/app.py

@@ -232,3 +232,12 @@ Here’s how the system works:
 The system generates plots for metrics like loss and accuracy after each round of training. These plots are saved in the `server/metric_plots` directory.
 
 ---
+
+## 🌐 Website
+
+To run:
+```bash
+make website
+```
+
+---
