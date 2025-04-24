@@ -14,12 +14,14 @@ fonttools==4.56.0
 fsspec==2025.3.2
 grpcio==1.71.0
 grpcio-tools==1.71.0
+gunicorn==23.0.0
 h11==0.14.0
 idna==3.10
 itsdangerous==2.2.0
 Jinja2==3.1.6
 joblib==1.4.2
 kiwisolver==1.4.8
+loguru==0.7.3
 MarkupSafe==3.0.2
 matplotlib==3.10.1
 mpmath==1.3.0
