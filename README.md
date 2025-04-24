@@ -31,6 +31,11 @@
 
 This repository contains our implementation for the *Distributed Systems* course project (Spring 2025). We've developed a **Federated Learning Model** that allows distributed training across multiple client nodes while preserving data privacy.
 
+[Distlearn - Website](https://distlearn.onrender.com/)
+
+
+[Distlearn - GitHub](https://github.com/Vinit2244/DistLearn)
+
 ## 📋 What is Federated Learning?
 
 Federated Learning is a distributed machine learning approach where models are trained locally on devices, preserving data privacy.
